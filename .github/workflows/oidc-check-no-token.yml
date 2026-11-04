@@ -1,0 +1,41 @@
+# Secret-free OIDC enforcement check 5: NO token.
+# No environment, no token, plain request to canonical Preview origin.
+# Only http status + classification + location category are printed.
+name: oidc-check-no-token
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: No-token enforcement check (classification only)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const ORIGIN = 'https://family-wealth-os-git-6df994-andres-felipe-garzon-diazs-projects.vercel.app';
+            const CANON = 'family-wealth-os-git-6df994-andres-felipe-garzon-diazs-projects.vercel.app';
+            const res = await fetch(ORIGIN + '/', { method: 'GET', redirect: 'manual' });
+            const status = res.status;
+            const loc = res.headers.get('location');
+            let locCat = 'none';
+            if (loc) {
+              try {
+                if (loc.startsWith('/') && !loc.startsWith('//') && !loc.includes('\\')) locCat = 'app_same_origin';
+                else {
+                  const u = new URL(loc, ORIGIN);
+                  if (u.hostname === CANON) locCat = 'app_same_origin';
+                  else if (u.hostname === 'vercel.com' || u.hostname.endsWith('.vercel.com')) locCat = 'vercel_sso';
+                  else locCat = 'other';
+                }
+              } catch { locCat = 'other'; }
+            }
+            const body = await res.text();
+            let cls = 'other';
+            if (status === 401 && body.includes('"code":"401"')) cls = 'vercel_edge';
+            else if (status === 302 && locCat === 'vercel_sso') cls = 'vercel_sso';
+            else if (status === 200) cls = 'app';
+            else if (status === 302 && locCat === 'app_same_origin') cls = 'app';
+            core.info(`check=no_token http_status=${status} classification=${cls} location_category=${locCat} expected_denied=${cls !== 'app' ? 'yes' : 'no'}`);
+            if (cls === 'app') core.setFailed('no-token request reached app');
