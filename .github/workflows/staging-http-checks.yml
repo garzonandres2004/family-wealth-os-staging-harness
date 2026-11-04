@@ -1,0 +1,1298 @@
+# ============================================================================
+# STAGING HTTP TEST HARNESS — GATE C ACTIVATION PACKAGE (CREDENTIAL-FREE)
+# ============================================================================
+# Gate C status: PENDING. This file is an ACTIVATION CANDIDATE only.
+# Do NOT dispatch this workflow until BOTH of the following hold:
+#   (1) the founder gives explicit Gate C approval naming the EXACT
+#       commit SHA of this package, AND
+#   (2) a fresh, full Codex review ACCEPTs that EXACT SHA.
+# Any commit after the Codex-ACCEPTED SHA voids that review; a new SHA
+# needs its own fresh Codex ACCEPT before it may be approved for a run.
+# No credential, password, database URL, token, or secret value appears
+# in this file or anywhere in this repository. Environment secrets are
+# provisioned ONLY at Gate C activation, AFTER the Codex ACCEPT, and
+# are deleted immediately after the single run (see docs/activation.md).
+#
+# Provenance: design SHA 332429b (Codex ACCEPT, design gate PASSED),
+# adapted for the revised Option 1 architecture (public harness repo +
+# GitHub environment gate + Vercel Trusted Sources OIDC). Changes from
+# 332429b, all required by that architecture:
+#   * Trigger: workflow_dispatch ONLY (public repo default branch main).
+#     No push, pull_request, pull_request_target, workflow_run, or
+#     schedule trigger: no commit can auto-run this harness. A run
+#     exists only if a write-access user dispatches it AND the reviewer
+#     approves that exact run in the environment gate.
+#   * Authentication to the protected Preview: Vercel Trusted Sources
+#     OIDC (header x-vercel-trusted-oidc-idp-token), NOT a Protection
+#     Bypass for Automation secret. NO bypass secret exists in this
+#     design, and no bypass header appears in this file.
+#     T00 mints a fresh OIDC token in-job, marks it secret, exports it
+#     runner-locally, and asserts its claims (booleans only) before any
+#     test step. The token is NEVER printed or logged, and is never
+#     passed as a URL query parameter. It IS stored runner-locally for
+#     the duration of this single job only (exported via
+#     core.exportVariable, masked in logs); the runner-managed
+#     environment file holding it is outside the Cleanup deletion list
+#     and is discarded with the ephemeral runner. It is never committed,
+#     copied, or sent anywhere else.
+#     as a URL query parameter. Vercel does NOT check workflow_sha,
+#     actor, or event_name; code integrity rests on GitHub environment
+#     approval + reviewer SHA-match + fresh Codex review, not on OIDC.
+#   * Accounts: Option A (GPT direction, explicit deviation): two
+#     dedicated, PRE-CONFIRMED synthetic staging accounts, temporary
+#     passwords stored exclusively as protected GitHub environment
+#     secrets, deleted after the session, accounts disabled or deleted
+#     after the session. This DEVIATES from in-run account creation;
+#     the deviation is accepted for a one-time security verification.
+#     It does not weaken the concurrent-invitation test, provided the
+#     invitation itself is freshly generated during the run (T08).
+#     No mailbox API integration, no confirmation-link parser, no
+#     mailbox credential.
+#   * T08b database access minimised: instead of SELECT on the whole
+#     fwos_state JSONB row, T08b calls a staging-only, count-returning
+#     SECURITY DEFINER function fwos_harness_t08b_counts(family_id,
+#     email) that returns ONLY three counts (active, invited, consumed
+#     active). The function body is in docs/count-function-t08b.sql
+#     for Codex review ONLY; it is NOT created by this package and NO
+#     database is modified by committing this file. If the function is
+#     absent at run time, T08b fails as a prerequisite failure, never
+#     a pass. Grants required: function owner (a role with SELECT on
+#     fwos_state) owns the function; the harness role is granted
+#     EXECUTE on the function ONLY, and NO SELECT on fwos_state.
+#     Residual access: the function can be called with arbitrary
+#     family/email inputs, but returns only three counts from synthetic
+#     staging data — no rows, no emails, no invite hashes, no other
+#     family data. If the count function proves impractical, the
+#     fallback is the original read-only role with SELECT on fwos_state,
+#     which requires explicit acceptance of broader synthetic-data access.
+#   * README ordering-clarity note (Codex ACCEPT, round 6): the T02
+#     Location classifier strips ONLY the trailing CR line terminator
+#     at capture (a line ending, not part of the value); the control-
+#     character check runs on the raw value BEFORE any trimming, and
+#     only then is exactly one leading space trimmed. Capture-time
+#     line-ending removal is distinct from subsequent value trimming.
+#   * Activation order, CORRECTED per GPT (reversed from the 332429b
+#     draft): complete workflow implementation + independent Codex
+#     review BEFORE provisioning any real credentials. Secret-free
+#     gate and OIDC dry runs may occur earlier, but must not grant
+#     access to staging data. Sequence at activation: (1) Gate A + Gate
+#     B + GPT confirmation of revised design + founder approval of exact
+#     OIDC claim policy, all recorded; (2) public repo + branch
+#     protection + environment (NO secrets yet) verified; (3) secret-free
+#     reviewer-gate + OIDC dry run + OIDC enforcement checks, both
+#     directions; (4) activation commit (this file) + fresh full Codex
+#     review of the EXACT activation SHA, ACCEPT required, any change
+#     after review voids it; (5) ONLY then founder Gate C approval of
+#     that exact SHA; (6) ONLY then provision environment secrets
+#     (Option A account passwords/emails + count-function DB URL);
+#     (7) reviewer verifies pending run SHA equals Codex-ACCEPTED
+#     activation SHA and ACCEPT exists, then approves that single run;
+#     (8) one run only; (9) immediate cleanup: remove Vercel Trusted
+#     Sources rule (default), delete all environment secrets and verify
+#     empty, drop DB function/role, disable/delete test accounts,
+#     remove workflow from main, verify cleanup, report verification
+#     not intent; (10) sanitized results to GPT, then a SEPARATE PR #6
+#     merge decision. See docs/activation.md for the full order,
+#     secret inventory/lifecycle, and rollback plan.
+#   * Founder self-review: Prevent self-review is OFF (documented
+#     deviation — single-person team, founder is both dispatcher and
+#     sole reviewer; GPT has no GitHub account). This is a RESIDUAL
+#     WEAKNESS, not independent human approval. Compensating controls:
+#     Codex independent review, SHA-match at approval, environment
+#     gate, Vercel claim pinning, one-run-then-cleanup, public logs.
+#     NOTE, 2026-11-04 00:34 MST (founder, explicit, recorded in
+#     MEMORY.md): the earlier UI-only approval rule was changed — the
+#     founder authorized Muse to approve GitHub environment runs via
+#     API while he is away, with any weakened gate proof disclosed to
+#     GPT. That change does NOT pre-approve Gate C, does NOT change
+#     this package's requirement for an exact-SHA founder Gate C
+#     approval + Codex ACCEPT, and does NOT authorize any credential
+#     provisioning or run before those two conditions hold. If API
+#     approval is used for the Gate C run itself, the weakened proof
+#     must be disclosed to GPT in the results report.
+#   * Production-proof by construction: this file contains ZERO
+#     occurrences of the production project ref, production domain,
+#     production host, or production DB URL (grep-audited). T00 asserts
+#     BASE origin equals the canonical Preview origin exactly before
+#     any test step. The harness NEVER attempts a Production connection.
+#
+# ENFORCEMENT EVIDENCE (2026-11-04, secret-free, public repo):
+#   dry run 41787804327 PASSED (all OIDC claim booleans yes);
+#   valid token (main + staging-http-checks): 200, app reached;
+#   wrong audience: 302, Vercel SSO denied; non-main branch (no env):
+#   302, Vercel SSO denied; wrong environment: 302, Vercel SSO denied;
+#   no token: 302, Vercel SSO denied; non-main + environment: denied
+#   by GitHub branch policy before any token was minted. LIMITATION,
+#   carried forward honestly: ref and environment enforcement are
+#   proven only in the COMBINED sense (repo claim alone insufficient),
+#   not isolated to ref alone or environment alone, because the
+#   negative tokens mismatched sub and ref/environment together.
+#   Audience enforcement IS isolated (wrong-audience token, all other
+#   claims correct, denied). Vercel branch pinning as a standalone
+#   claim remains unisolated; do not claim otherwise.
+#
+# OUTPUT DISCIPLINE (unchanged from 332429b, extended): numeric HTTP
+# statuses and yes/no flags ONLY, plus destination category strings
+# (app_same_origin / vercel_sso / other) and prerequisite-failure
+# messages. No response body, header value, cookie value, password,
+# session token, invitation code, OIDC token value, or DB error text
+# is ever printed. See docs/activation.md for the full discipline.
+#
+# NOT COVERED (unchanged from 332429b): ordinary Supabase login token
+# as recovery code (app API never returns tokens, cookies only);
+# cross-device PKCE recovery; mobile UI (Step 8, separate route);
+# Production or real user data; true overlapping handler execution
+# in T08 (concurrent-request testing with final-state verification).
+# ============================================================================
+
+name: staging-http-checks
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  BASE: https://family-wealth-os-git-6df994-andres-felipe-garzon-diazs-projects.vercel.app
+  ORIGIN: https://family-wealth-os-git-6df994-andres-felipe-garzon-diazs-projects.vercel.app
+
+jobs:
+  staging-http-checks:
+    runs-on: ubuntu-latest
+    # Controlled execution: secrets come ONLY from this environment
+    # (required reviewers + deployment branches restricted to
+    # main). See header activation sequence.
+    # The environment itself must be verified at activation time; its
+    # existence in this file is a declaration, not proof.
+    environment: staging-http-checks
+    env:
+      STAGING_USER_A_EMAIL: ${{ secrets.STAGING_USER_A_EMAIL }}
+      STAGING_USER_A_PASSWORD: ${{ secrets.STAGING_USER_A_PASSWORD }}
+      STAGING_USER_B_EMAIL: ${{ secrets.STAGING_USER_B_EMAIL }}
+      STAGING_USER_B_PASSWORD: ${{ secrets.STAGING_USER_B_PASSWORD }}
+      STAGING_COUNT_DATABASE_URL: ${{ secrets.STAGING_COUNT_DATABASE_URL }}
+    steps:
+      - name: Checkout (main only, no code is executed from it)
+        uses: actions/checkout@v4
+
+      - name: Init results file
+        run: |
+          assert_eq() { if [ "$2" != "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          assert_yes() { if [ "$2" != "yes" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          assert_ne() { if [ "$2" = "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          : > results.txt
+          echo "harness=staging-http-checks target=staging-preview-only" >> results.txt
+
+      # -- 0. OIDC self-check: mint, assert claims, export token --------
+      # T00 runs BEFORE any test step and before any explicit use of
+      # staging credentials in test steps (job-scope secret supply and
+      # checkout precede T00, so no broader claim is made). It mints a
+      # fresh GitHub OIDC token, marks it secret (masked in logs),
+      # asserts its claims as booleans only, and exports it to the job
+      # environment for later steps. The token value is NEVER printed
+      # or logged, and is never passed as a URL query parameter. It IS
+      # stored runner-locally for this single job only (exported via
+      # core.exportVariable); that runner-managed environment file is
+      # outside the Cleanup deletion list and is discarded with the
+      # ephemeral runner.
+      # Assertions: iss is GitHub's issuer; aud present; repository is
+      # this public repo; repository_id present; environment is
+      # staging-http-checks; ref is refs/heads/main; workflow_sha
+      # present and equal to the run's workflow SHA; event_name is
+      # workflow_dispatch; sub contains :environment:staging-http-checks.
+      # BASE origin is asserted exactly equal to the canonical Preview
+      # origin before any request. Any failed assertion fails the run.
+      - name: T00 OIDC self-check and token export
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken();
+            core.setSecret(token);
+            const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
+            const checks = {
+              iss_is_github: payload.iss === 'https://token.actions.githubusercontent.com',
+              aud_present: typeof payload.aud === 'string' && payload.aud.length > 0,
+              repository_is_this_repo: payload.repository === 'garzonandres2004/family-wealth-os-staging-harness',
+              repository_id_present: typeof payload.repository_id === 'string' && payload.repository_id.length > 0,
+              environment_is_staging_http_checks: payload.environment === 'staging-http-checks',
+              ref_is_main: payload.ref === 'refs/heads/main',
+              workflow_sha_present: typeof payload.workflow_sha === 'string' && payload.workflow_sha.length > 0,
+              workflow_sha_matches_run: payload.workflow_sha === process.env.GITHUB_SHA,
+              event_is_workflow_dispatch: payload.event_name === 'workflow_dispatch',
+              sub_contains_environment: typeof payload.sub === 'string' && payload.sub.includes(':environment:staging-http-checks'),
+              base_is_canonical_preview: process.env.BASE === 'https://family-wealth-os-git-6df994-andres-felipe-garzon-diazs-projects.vercel.app',
+            };
+            for (const [k, v] of Object.entries(checks)) core.info(`${k}=${v ? 'yes' : 'no'}`);
+            const failed = Object.entries(checks).filter(([, v]) => !v);
+            if (failed.length > 0) core.setFailed(`T00 OIDC assertion failed: ${failed.map(([k]) => k).join(',')}`);
+            core.exportVariable('OIDC_TOKEN', token);
+
+      # -- 1. Deployment Protection without OIDC -------------------------
+      - name: T01 protection without OIDC
+        run: |
+          assert_ne() { if [ "$2" = "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          s_root=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/")
+          s_api=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/families")
+          echo "t01_root_no_oidc=$s_root" >> results.txt
+          echo "t01_api_no_oidc=$s_api" >> results.txt
+          # Edge denial only: an app 200 here means protection is off.
+          assert_ne t01_root "$s_root" "200"
+          assert_ne t01_api "$s_api" "200"
+
+      # -- 2. Deployment Protection with OIDC, unauthenticated ----------
+      # A numeric 401 alone does NOT distinguish a Vercel edge denial
+      # from an application 401. The app's own error shape (lib/http.ts)
+      # is JSON {"error": ...} with NO "code" field; the Vercel edge
+      # denial shape is JSON {"code": "401", "message": ...} or a 302
+      # redirect to Vercel SSO. So classify every response by SHAPE,
+      # never by printing its body: is_json, has_error_field,
+      # has_code_field, and, for redirects, the Location DESTINATION
+      # CATEGORY only, computed by parsing the URL and comparing the
+      # EXACT ORIGIN: scheme AND hostname AND effective port (443 for
+      # https, 80 for http, explicit port otherwise) against the
+      # canonical Preview origin. The Location value itself is never
+      # echoed. EVERY protocol-relative destination (//anything,
+      # including //canonical-host/...) is "other", never same-origin.
+      # Root enforcement covers ALL statuses: 200 = app page served;
+      # 302 = must redirect to a same-origin destination; 401 = must
+      # carry the app shape; any other status (403/404/500/...) FAILS,
+      # it does not pass silently.
+      - name: T02 protection with OIDC, unauthenticated
+        run: |
+          assert_eq() { if [ "$2" != "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          classify_body() {
+            # $1 = body file. Prints only flags, never the body.
+            local f="$1" is_json=no has_error=no has_code=no
+            # EXACTLY-ONE-DOCUMENT (Codex finding): jq -s slurps the
+            # whole input, so a valid document followed by malformed
+            # JSON or a second document fails every check below; no
+            # partial flag can be set from a prefix document.
+            if jq -se 'length==1' "$f" >/dev/null 2>&1; then is_json=yes; fi
+            if jq -se 'if length==1 and (.[0]|type=="object") and (.[0]|has("error")) then true else error("no") end' "$f" >/dev/null 2>&1; then has_error=yes; fi
+            if jq -se 'if length==1 and (.[0]|type=="object") and (.[0]|has("code")) then true else error("no") end' "$f" >/dev/null 2>&1; then has_code=yes; fi
+            echo "is_json=$is_json error_field=$has_error code_field=$has_code"
+          }
+          classify_location() {
+            # $1 = headers file. Prints only a category, never the URL.
+            # Parses the Location in pure bash (no python, hence no
+            # ValueError traceback can print response-derived text)
+            # and compares the EXACT ORIGIN: scheme AND hostname AND
+            # effective port against the canonical Preview origin.
+            # Same-origin iff scheme is https AND host is exactly the
+            # canonical host AND (no port OR port is exactly "443");
+            # an EXPLICIT port is used as-is, including :0, which is
+            # NOT the default and therefore NOT same-origin.
+            # Hostname alone is NOT enough: the canonical host over
+            # http, or with an arbitrary port, is NOT same-origin.
+            # EVERY protocol-relative destination (//anything,
+            # including //canonical-host/...) is "other", never
+            # app_same_origin, even though urlparse would report its
+            # hostname as the canonical host.
+            # TRACEBACK SANITISATION (Codex finding, round 4): the
+            # previous python classifier could raise ValueError for
+            # an invalid port, with the port text in the message. This
+            # bash classifier never parses an integer port and never
+            # emits a diagnostic: malformed authorities (double colon,
+            # empty port, non-digit port, backslash anywhere) are all
+            # classified "other" by pattern matching alone. Only the
+            # category is ever printed.
+            local loc loc_raw out
+            # EXTRACTION ORDER (Codex finding, round 6): extract raw
+            # -> control check -> trim single space + trailing CR ->
+            # classify. The value is extracted after the first colon
+            # WITHOUT stripping leading whitespace controls first: a
+            # previous "sed 's/^[^:]*:[[:space:]]*//'" consumed
+            # leading tabs, CRs, and other whitespace controls, so
+            # "Location: <TAB>/" became "/" and wrongly classified
+            # app_same_origin, violating the rule that ANY 0x01-0x1F
+            # or 0x7F anywhere in the value classifies "other".
+            # Only the trailing CR line terminator of the header line
+            # is stripped at capture time (it is a line ending, not
+            # part of the value); a previous "tr -d '\r'" deleted
+            # every CR, including an embedded one, silently changing
+            # the value under test, so an embedded CR must instead
+            # reach the control-character check below and classify
+            # the destination "other". Leading controls are checked
+            # on loc_raw below, BEFORE any trimming: only after that
+            # check passes is a single leading space (the standard
+            # single space after the colon) trimmed, and only if no
+            # control character remains.
+            loc_raw=$(grep -i '^location:' "$1" 2>/dev/null | head -n 1 | sed 's/\r$//' || true)
+            loc_raw="${loc_raw#*:}"
+            # SPLIT-HEADER (Codex finding, round 5): a Location value
+            # containing a raw newline cannot exist as one header
+            # line; it arrives split across lines, so "head -n 1"
+            # above sees only the first fragment ("/") and would
+            # misclassify it as same-origin while a browser resolving
+            # the folded/stripped value could reach an external
+            # destination. If the line immediately after the Location
+            # line is not a well-formed header line (a name with no
+            # space, tab, slash, backslash, or control character,
+            # followed by ":"), the Location is not a trustworthy
+            # single-line value: a continuation (obs-fold, leading
+            # space/tab), a bare fragment ("/evil.example/"), or any
+            # other non-header line all mean "other". A blank next
+            # line (end of the header block) is fine, as is any
+            # well-formed next header.
+            local splitfrag=no locline nextline headpart
+            locline=$(grep -in '^location:' "$1" 2>/dev/null | head -n 1 | cut -d: -f1 || true)
+            nextline=""
+            if [ -n "$locline" ]; then nextline=$(sed -n "$((locline + 1))p" "$1" 2>/dev/null | sed 's/\r$//' || true); fi
+            if [ -n "$nextline" ]; then
+              headpart="${nextline%%:*}"
+              # NONEMPTY HEADER NAME (Codex finding, round 6): a
+              # following line such as ":fragment" produces an empty
+              # headpart, satisfies none of the rejection conditions
+              # below, and was wrongly treated as a well-formed next
+              # header. An empty header name is malformed -> other.
+              if [ -z "$headpart" ] || [ "$headpart" = "$nextline" ] || [[ "$headpart" == *' '* || "$headpart" == *$'\t'* || "$headpart" == *'/'* || "$headpart" == *'\'* || "$headpart" == *[$'\x01'-$'\x1f'$'\x7f']* ]]; then splitfrag=yes; fi
+            fi
+            # STRICT BASH AUTHORITY PARSING (Codex findings, round 4):
+            # No python, hence no ValueError traceback can ever print
+            # response-derived text. Rules, in order:
+            #  * split/continuation line after Location -> other,
+            #    FIRST (Codex finding, round 5: a newline inside the
+            #    value splits it across header lines, so the first
+            #    fragment alone must never be trusted).
+            #  * empty -> none; ANY control character (0x01-0x1F, 0x7F)
+            #    anywhere -> other, before any other rule
+            #    (Codex finding, round 5: browsers strip tabs/newlines
+            #    before resolving, so "/<TAB>/evil.example/" resolves
+            #    as "//evil.example/"; NUL cannot be held in a bash
+            #    variable and is dropped on capture).
+            #  * ANY backslash anywhere -> other
+            #    ("/\evil.example/" is NOT same-origin: a browser can
+            #    read the backslash as a slash, yielding an external
+            #    authority).
+            #  * "//..." -> other (protocol-relative, always).
+            #  * relative path: exactly "/" OR "/" followed by a
+            #    character that is neither "/" nor "\" -> app_same_origin;
+            #    anything else ("/\", "//", "/ " etc.) -> other.
+            #  * absolute URL: must match scheme://authority; authority
+            #    = [userinfo@]host[:port] with AT MOST ONE colon in the
+            #    hostport part (a second colon, e.g. host::443, is
+            #    malformed -> other), an EXPLICIT empty port (host:/)
+            #    is malformed -> other, a port if present must be
+            #    1+ digits (":SECRET" -> other, ":0" -> other because
+            #    it is not 443). Same-origin iff scheme is https AND
+            #    host is exactly the canonical host AND (no port OR
+            #    port is exactly "443") — no integer parsing, so no
+            #    overflow or ":0 treated as absent" bug. Userinfo
+            #    alone does not change the origin. Vercel SSO iff host
+            #    is vercel.com or *.vercel.com. Anything else -> other.
+            local canon="family-wealth-os-git-6df994-andres-felipe-garzon-diazs-projects.vercel.app" out="other"
+            # ORDER (Codex findings, round 5 and round 6):
+            # split-fragment -> control check on RAW value -> trim
+            # exactly one leading space -> remaining rules on the
+            # trimmed value. Leading tabs/CRs are part of loc_raw
+            # and are NOT stripped before the control check (round
+            # 6: the old sed stripped them, so "Location: <TAB>/"
+            # became "/" and wrongly classified app_same_origin).
+            # CONTROL CHARACTERS (round 5): browser URL parsing
+            # strips ASCII tabs/newlines (and, by the same reasoning,
+            # other control characters) before resolving a Location,
+            # so "/<TAB>/evil.example/" would resolve as
+            # "//evil.example/". ANY control character anywhere in
+            # the RAW value therefore classifies "other", before
+            # any relative/absolute rule runs. NUL (0x00) needs no
+            # explicit test: a bash variable cannot hold a NUL byte,
+            # so command substitution already drops it on capture;
+            # 0x01-0x1F and 0x7F are tested explicitly below. The
+            # trailing CR line terminator was already stripped at
+            # capture and is not an embedded control character.
+            if [ "$splitfrag" = "yes" ]; then out="other"
+            elif [[ "$loc_raw" == *[$'\x01'-$'\x1f'$'\x7f']* ]]; then out="other"
+            elif [ -z "$loc_raw" ]; then out="none"
+            else
+              # TRIM, ONLY AFTER THE CONTROL CHECK PASSES (round
+              # 6): strip exactly one leading space (the standard
+              # single space after the colon) and nothing else.
+              # Tabs are never trimmed here: a leading tab already
+              # failed the control check above, so it can never
+              # reach this trim.
+              loc="${loc_raw# }"
+              if [ -z "$loc" ]; then out="none"
+              elif [[ "$loc" == *'\'* || "$loc" == *' '* ]]; then out="other"
+              elif [[ "$loc" == '//'* ]]; then out="other"
+              elif [[ "$loc" == '/'* ]]; then
+                if [ "$loc" = "/" ]; then out="app_same_origin"
+                elif [[ "${loc:1:1}" != '/' && "${loc:1:1}" != '\' ]]; then out="app_same_origin"
+                else out="other"; fi
+              elif [[ "$loc" =~ ^(https?)://([^/?#]+)(/.*)?$ ]]; then
+                local scheme="${BASH_REMATCH[1]}" authority="${BASH_REMATCH[2]}" hostport host portstr coloncount tmp
+                hostport="${authority##*@}"
+                if [[ "$authority" == *'@'* && "${authority%@*}" == "" ]]; then out="other"
+                elif [[ "$hostport" == '['* ]]; then out="other"
+                else
+                  tmp="${hostport//[^:]}"
+                  coloncount="${#tmp}"
+                  if [ "$coloncount" -gt 1 ]; then out="other"
+                  elif [[ "$hostport" == *':'* ]]; then
+                    host="${hostport%:*}"; portstr="${hostport##*:}"
+                    if [ -z "$portstr" ] || [[ "$portstr" == *[!0-9]* ]]; then out="other"
+                    elif [ "$scheme" = "https" ] && [ "${host,,}" = "$canon" ] && [ "$portstr" = "443" ]; then out="app_same_origin"
+                    elif [ "${host,,}" = "vercel.com" ] || [[ "${host,,}" == *.vercel.com ]]; then out="vercel_sso"
+                    else out="other"; fi
+                  else
+                    host="$hostport"
+                    if [ "$scheme" = "https" ] && [ "${host,,}" = "$canon" ]; then out="app_same_origin"
+                    elif [ "${host,,}" = "vercel.com" ] || [[ "${host,,}" == *.vercel.com ]]; then out="vercel_sso"
+                    else out="other"; fi
+                  fi
+                fi
+              else out="other"; fi
+            fi
+            case "$out" in app_same_origin|vercel_sso|other|none) ;; *) out=other ;; esac
+            printf '%s' "$out"
+          }
+          s_root=$(curl -s -o root.body -w "%{http_code}" -D root.headers -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" "$BASE/")
+          s_api=$(curl -s -o api.body -w "%{http_code}" -D api.headers -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" "$BASE/api/families")
+          echo "t02_root_with_oidc=$s_root" >> results.txt
+          echo "t02_root_shape=$(classify_body root.body)" >> results.txt
+          echo "t02_root_location=$(classify_location root.headers)" >> results.txt
+          echo "t02_api_with_oidc_unauth=$s_api" >> results.txt
+          echo "t02_api_shape=$(classify_body api.body)" >> results.txt
+          echo "t02_api_location=$(classify_location api.headers)" >> results.txt
+          # API must be 401 AND the app shape (JSON, error present,
+          # code absent). An edge denial (code field, or SSO redirect)
+          # fails here even though its status is also 401/302.
+          assert_eq t02_api_status "$s_api" "401"
+          assert_eq t02_api_shape "$(classify_body api.body)" "is_json=yes error_field=yes code_field=no"
+          if [ "$(classify_location api.headers)" = "vercel_sso" ]; then echo "ASSERT_FAIL t02_api_location" >&2; exit 1; fi
+          # Root: enforce by status, no silent passes.
+          root_loc=$(classify_location root.headers)
+          case "$s_root" in
+            200) ;;
+            302) assert_eq t02_root_redirect "$root_loc" "app_same_origin" ;;
+            401) assert_eq t02_root_shape "$(classify_body root.body)" "is_json=yes error_field=yes code_field=no" ;;
+            *) echo "ASSERT_FAIL t02_root_status" >&2; exit 1 ;;
+          esac
+          if [ "$root_loc" = "vercel_sso" ]; then echo "ASSERT_FAIL t02_root_location" >&2; exit 1; fi
+
+      # -- 3. Login A: numeric status + cookie attribute flags only -------
+      - name: T03 login A and cookie flags
+        run: |
+          assert_eq() { if [ "$2" != "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          jq -n --arg e "$STAGING_USER_A_EMAIL" --arg p "$STAGING_USER_A_PASSWORD" '{email:$e,password:$p}' > loginA.json
+          s=$(curl -s -o loginA.body -w "%{http_code}" -D loginA.headers -c jarA.txt -b jarA.txt \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @loginA.json \
+            "$BASE/api/auth/login")
+          echo "t03_login_a=$s" >> results.txt
+          assert_eq t03_login_a "$s" "200"
+          # Reduce each Set-Cookie line to attribute flags only. The
+          # header lines (which carry cookie VALUES) are never echoed.
+          # Each flag is asserted inside the loop, so a failed first
+          # cookie cannot be masked by the next loop iteration.
+          for name in fwos_session fwos_refresh; do
+            line=$(grep -i "^set-cookie: ${name}=" loginA.headers | head -n 1 || true)
+            # TERMINAL CR (Codex finding, r2): curl -D captures
+            # CRLF-terminated headers; command substitution strips the
+            # trailing newline but RETAINS the carriage return, so a
+            # valid final attribute would arrive as "samesite=lax\r"
+            # and fail exact matching. Strip ONLY the single terminal
+            # CR here (a line ending, not part of any attribute value);
+            # embedded CRs elsewhere are not stripped by this step and
+            # cannot silently become valid attributes, because the
+            # exact whole-line matches below would still fail on them.
+            line="${line%$'\r'}"
+            # ATTRIBUTE-BOUNDARY PARSING (Codex finding): attributes
+            # are parsed as complete semicolon-delimited name/value
+            # pairs AFTER the first semicolon only, so the cookie
+            # VALUE (first segment) can never satisfy a flag, and
+            # "Path=/restricted" or "SameSite=LaxSomething" cannot
+            # satisfy the exact Path=/ or SameSite=Lax assertions.
+            # Attribute names/values are lowercased; matching is
+            # against whole attribute lines only (grep -x).
+            attrs=$(printf '%s' "$line" | cut -d';' -f2- | tr ';' '\n' | sed 's/^ *//;s/ *$//' | tr '[:upper:]' '[:lower:]' || true)
+            present=no; httponly=no; samesite=no; path=no; secure=no; maxage=no; domain=no
+            [ -n "$line" ] && present=yes
+            printf '%s\n' "$attrs" | grep -qx 'httponly' && httponly=yes || true
+            printf '%s\n' "$attrs" | grep -qx 'samesite=lax' && samesite=yes || true
+            printf '%s\n' "$attrs" | grep -qx 'path=/' && path=yes || true
+            printf '%s\n' "$attrs" | grep -qx 'secure' && secure=yes || true
+            printf '%s\n' "$attrs" | grep -qxE 'max-age=[0-9]+' && maxage=yes || true
+            printf '%s\n' "$attrs" | grep -qxE 'domain=.+' && domain=yes || true
+            echo "t03_cookie_${name}_present=$present httponly=$httponly samesite_lax=$samesite path_root=$path secure=$secure maxage=$maxage domain_present=$domain" >> results.txt
+            assert_eq "t03_cookie_${name}_present" "$present" "yes"
+            assert_eq "t03_cookie_${name}_httponly" "$httponly" "yes"
+            assert_eq "t03_cookie_${name}_samesite" "$samesite" "yes"
+            assert_eq "t03_cookie_${name}_path" "$path" "yes"
+            assert_eq "t03_cookie_${name}_secure" "$secure" "yes"
+            assert_eq "t03_cookie_${name}_maxage" "$maxage" "yes"
+            assert_eq "t03_cookie_${name}_domain" "$domain" "no"
+          done
+
+      # -- 3b. Setup A: own family + private account (CORRECTED, run 2) --
+      # Root cause of run 1 failure (41797218689, T07 t07_family_a_parse):
+      # the fresh Option A accounts had NO family and NO account, while
+      # T07 discovers each family from that user's own /api/families
+      # call and parses .[0].family.id. An empty list failed the parse
+      # mid-run, skipping T08/T08b/T09/T10. That was a setup gap, not an
+      # app security failure. Fix (a), chosen over (b): the harness
+      # itself creates, with each account's OWN authenticated session,
+      # that account's family + one private account BEFORE T07. T07 can
+      # therefore never fail on an empty family list caused by missing
+      # setup. If creation itself fails, this step fails closed with a
+      # setup assertion (t03b_*/t07b_*), never a T07 parse failure.
+      # Only counts/booleans are recorded; family/account ids are
+      # runner-local files only, exactly as famA.txt/famB.txt already are.
+      # Family POST (app lib/service.ts createFamily): {name} -> 201
+      # {family:{id},memberId}. Account POST (createRecord):
+      # {familyId,name,kind:"cash",currency:"USD",balance:<major>}
+      # -> 201. Balance 1000 is synthetic test data only.
+      - name: T03b setup A family and private account
+        run: |
+          assert_eq() { if [ "$2" != "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          curl -s -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" -b jarA.txt -c jarA.txt "$BASE/api/families" -o famA_pre.json
+          fam_count=$(jq -se 'if length==1 and (.[0]|type=="array") then (.[0]|length) else error("bad") end' famA_pre.json 2>/dev/null || echo bad)
+          if [ "$fam_count" = "bad" ]; then echo "ASSERT_FAIL t03b_families_parse" >&2; exit 1; fi
+          created=no
+          if [ "$fam_count" = "0" ]; then
+            jq -n --arg n "Harness Family A" '{name:$n}' > famA_new.json
+            s=$(curl -s -o famA_new.body -w "%{http_code}" -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" -b jarA.txt -c jarA.txt -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @famA_new.json "$BASE/api/families")
+            assert_eq t03b_family_create_status "$s" "201"
+            if ! famA=$(jq -rse 'if length==1 and (.[0].family.id|type=="string") then .[0].family.id else error("bad") end' famA_new.body 2>/dev/null); then echo "ASSERT_FAIL t03b_family_parse" >&2; exit 1; fi
+            created=yes
+          else
+            if ! famA=$(jq -rse 'if length==1 and (.[0]|type=="array") and (.[0][0].family.id|type=="string") then .[0][0].family.id else error("bad") end' famA_pre.json 2>/dev/null); then echo "ASSERT_FAIL t03b_family_parse" >&2; exit 1; fi
+          fi
+          printf '%s' "$famA" > famA.txt
+          jq -n --arg f "$famA" --arg n "Harness Account A" '{familyId:$f,name:$n,kind:"cash",currency:"USD",balance:1000,source:"manual"}' > accA_new.json
+          s=$(curl -s -o accA_new.body -w "%{http_code}" -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" -b jarA.txt -c jarA.txt -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @accA_new.json "$BASE/api/accounts")
+          assert_eq t03b_account_create_status "$s" "201"
+          echo "t03b_family_created=$created" >> results.txt
+          echo "t03b_account_created=yes" >> results.txt
+          echo "t03b_family_found=yes" >> results.txt
+
+      # -- 4. Wrong password: generic 401, no session -----------------------
+      # Generic, code-grounded (lib/auth-flow.ts): a credential failure
+      # returns 401 with the single generic message, never an
+      # account-specific one. The message is compared internally and
+      # only a boolean is recorded; the message itself is a static
+      # string in this script (a user-facing app message, not a secret).
+      - name: T04 wrong password is generic 401
+        run: |
+          assert_eq() { if [ "$2" != "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          error_is() {
+            # EXACTLY-ONE-DOCUMENT + EXACT-STRING (Codex finding):
+            # jq -s slurps the WHOLE input: a valid object followed by
+            # malformed JSON, or a second document, makes jq fail and
+            # yields NO output, so no partial result can satisfy the
+            # comparison. Without -s, 'jq ... || true' preserved output
+            # emitted before a later parse failure. Comparison is on
+            # JSON-ENCODED strings (jq without -r): jq -r plus command
+            # substitution strips trailing newlines, so "foo" and
+            # "foo\n" would compare equal; the encoded forms differ.
+            # A missing/non-string .error yields null or another JSON
+            # value, never equal to the encoded expected string.
+            local f="$1" exp_json got
+            exp_json=$(jq -n --arg e "$2" '$e' 2>/dev/null)
+            if got=$(jq -se 'if length==1 then .[0].error else error("not-one-doc") end' "$f" 2>/dev/null); then
+              if [ "$got" = "$exp_json" ]; then echo yes; else echo no; fi
+            else echo no; fi
+          }
+          jq -n --arg e "$STAGING_USER_A_EMAIL" --arg p "wrong-password-test-input" '{email:$e,password:$p}' > loginWrong.json
+          s=$(curl -s -o wrong.body -w "%{http_code}" -D wrong.headers -c wrongJar.txt \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @loginWrong.json \
+            "$BASE/api/auth/login")
+          echo "t04_login_wrong_password=$s" >> results.txt
+          has_session=no
+          grep -qi "^set-cookie: fwos_session=" wrong.headers && has_session=yes || true
+          echo "t04_wrong_login_sets_session=$has_session" >> results.txt
+          echo "t04_wrong_login_generic_error=$(error_is wrong.body 'Correo o contrasena incorrectos, o la cuenta aun no esta confirmada')" >> results.txt
+          assert_eq t04_status "$s" "401"
+          assert_eq t04_no_session "$has_session" "no"
+          assert_eq t04_generic_error "$(error_is wrong.body 'Correo o contrasena incorrectos, o la cuenta aun no esta confirmada')" "yes"
+
+      # -- 5. CSRF matrix on a side-effect-free mutation --------------------
+      # POST /api/members/accept with a bogus token has no state effect.
+      # Expected errors are compared EXACTLY and internally; only
+      # booleans are recorded. Grounding (code at edd0a7a, read, not
+      # assumed):
+      #   * app/api/members/accept/route.ts exists and calls
+      #     service.acceptInvite(); a token matching no pending
+      #     invitation throws notFound('Codigo de invitacion no valido')
+      #     (lib/service.ts:128), mapped by lib/http.ts to JSON
+      #     {"error": ...} with status 404.
+      #   * A missing Next route returns an HTML 404 page, NOT JSON
+      #     with that error value. JSON + error-field alone therefore
+      #     does NOT prove the handler; the exact error value does.
+      #   * A CSRF rejection returns 403 with JSON
+      #     {"error": "Origen no permitido"} (lib/csrf.ts MSG_BAD_ORIGIN),
+      #     BEFORE the handler runs (lib/http.ts route wrapper).
+      # So handler-reached requires: status 404 AND body is JSON AND
+      # error equals exactly the bogus-invitation message. CSRF
+      # rejections require: status 403 AND error equals exactly the
+      # CSRF message. Any other error value fails, even at the same
+      # status. Bodies are never printed.
+      - name: T05 CSRF matrix
+        run: |
+          assert_eq() { if [ "$2" != "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          error_is() {
+            # EXACTLY-ONE-DOCUMENT + EXACT-STRING (Codex finding):
+            # jq -s slurps the WHOLE input: a valid object followed by
+            # malformed JSON, or a second document, makes jq fail and
+            # yields NO output, so no partial result can satisfy the
+            # comparison. Without -s, 'jq ... || true' preserved output
+            # emitted before a later parse failure. Comparison is on
+            # JSON-ENCODED strings (jq without -r): jq -r plus command
+            # substitution strips trailing newlines, so "foo" and
+            # "foo\n" would compare equal; the encoded forms differ.
+            # A missing/non-string .error yields null or another JSON
+            # value, never equal to the encoded expected string.
+            local f="$1" exp_json got
+            exp_json=$(jq -n --arg e "$2" '$e' 2>/dev/null)
+            if got=$(jq -se 'if length==1 then .[0].error else error("not-one-doc") end' "$f" 2>/dev/null); then
+              if [ "$got" = "$exp_json" ]; then echo yes; else echo no; fi
+            else echo no; fi
+          }
+          jq -n --arg t "invalid-test-token" '{token:$t}' > acceptBogus.json
+          s_foreign=$(curl -s -o foreign.body -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: https://example.invalid" -H "Content-Type: application/json" -d @acceptBogus.json \
+            -b jarA.txt -c jarA.txt "$BASE/api/members/accept")
+          s_missing=$(curl -s -o missing.body -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Content-Type: application/json" -d @acceptBogus.json \
+            -b jarA.txt -c jarA.txt "$BASE/api/members/accept")
+          s_same=$(curl -s -o same.body -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @acceptBogus.json \
+            -b jarA.txt -c jarA.txt "$BASE/api/members/accept")
+          echo "t05_csrf_foreign_origin=$s_foreign" >> results.txt
+          echo "t05_csrf_foreign_exact_error=$(error_is foreign.body 'Origen no permitido')" >> results.txt
+          echo "t05_csrf_missing_origin=$s_missing" >> results.txt
+          echo "t05_csrf_missing_exact_error=$(error_is missing.body 'Origen no permitido')" >> results.txt
+          echo "t05_csrf_same_origin_bogus_token=$s_same" >> results.txt
+          echo "t05_csrf_same_exact_error=$(error_is same.body 'Codigo de invitacion no valido')" >> results.txt
+          # Each check is enforced separately; a failed foreign or
+          # missing check cannot be masked by a later check, and the
+          # step does not end with an unconditional success echo.
+          assert_eq t05_foreign_status "$s_foreign" "403"
+          assert_eq t05_foreign_error "$(error_is foreign.body 'Origen no permitido')" "yes"
+          assert_eq t05_missing_status "$s_missing" "403"
+          assert_eq t05_missing_error "$(error_is missing.body 'Origen no permitido')" "yes"
+          assert_eq t05_same_status "$s_same" "404"
+          assert_eq t05_same_error "$(error_is same.body 'Codigo de invitacion no valido')" "yes"
+          echo "t05_handler_reached_for_bogus_token=yes" >> results.txt
+
+      # -- 6. Forged forwarding headers must not rescue or bypass ---------
+      # Same exact-error proof as T05: forwarded headers are ignored,
+      # so same-Origin still reaches the handler (404, bogus-invitation
+      # error) and foreign Origin is still rejected (403, CSRF error).
+      - name: T06 forged forwarded headers
+        run: |
+          assert_eq() { if [ "$2" != "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          error_is() {
+            # EXACTLY-ONE-DOCUMENT + EXACT-STRING (Codex finding):
+            # jq -s slurps the WHOLE input: a valid object followed by
+            # malformed JSON, or a second document, makes jq fail and
+            # yields NO output, so no partial result can satisfy the
+            # comparison. Without -s, 'jq ... || true' preserved output
+            # emitted before a later parse failure. Comparison is on
+            # JSON-ENCODED strings (jq without -r): jq -r plus command
+            # substitution strips trailing newlines, so "foo" and
+            # "foo\n" would compare equal; the encoded forms differ.
+            # A missing/non-string .error yields null or another JSON
+            # value, never equal to the encoded expected string.
+            local f="$1" exp_json got
+            exp_json=$(jq -n --arg e "$2" '$e' 2>/dev/null)
+            if got=$(jq -se 'if length==1 then .[0].error else error("not-one-doc") end' "$f" 2>/dev/null); then
+              if [ "$got" = "$exp_json" ]; then echo yes; else echo no; fi
+            else echo no; fi
+          }
+          s_fwd_same=$(curl -s -o fwdSame.body -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "X-Forwarded-Host: evil.example" -H "X-Forwarded-Proto: http" \
+            -H "Content-Type: application/json" -d @acceptBogus.json \
+            -b jarA.txt -c jarA.txt "$BASE/api/members/accept")
+          s_fwd_rescue=$(curl -s -o fwdRescue.body -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: https://example.invalid" -H "X-Forwarded-Host: family-wealth-os-git-6df994-andres-felipe-garzon-diazs-projects.vercel.app" -H "X-Forwarded-Proto: https" \
+            -H "Content-Type: application/json" -d @acceptBogus.json \
+            -b jarA.txt -c jarA.txt "$BASE/api/members/accept")
+          echo "t06_forwarded_with_same_origin=$s_fwd_same" >> results.txt
+          echo "t06_forwarded_same_exact_error=$(error_is fwdSame.body 'Codigo de invitacion no valido')" >> results.txt
+          echo "t06_forwarded_claiming_canonical_with_foreign_origin=$s_fwd_rescue" >> results.txt
+          echo "t06_forwarded_rescue_exact_error=$(error_is fwdRescue.body 'Origen no permitido')" >> results.txt
+          assert_eq t06_fwd_same_status "$s_fwd_same" "404"
+          assert_eq t06_fwd_same_error "$(error_is fwdSame.body 'Codigo de invitacion no valido')" "yes"
+          assert_eq t06_fwd_rescue_status "$s_fwd_rescue" "403"
+          assert_eq t06_fwd_rescue_error "$(error_is fwdRescue.body 'Origen no permitido')" "yes"
+
+      # -- 7. Two-family numeric authorization / isolation -----------------
+      # Cross-family 403 error, code-grounded (lib/authz.ts
+      # activeMember): 'No pertenece a esta familia'. Compared exactly,
+      # only booleans recorded.
+      - name: T07 login B and cross-family isolation
+        run: |
+          assert_eq() { if [ "$2" != "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          error_is() {
+            # EXACTLY-ONE-DOCUMENT + EXACT-STRING (Codex finding):
+            # jq -s slurps the WHOLE input: a valid object followed by
+            # malformed JSON, or a second document, makes jq fail and
+            # yields NO output, so no partial result can satisfy the
+            # comparison. Without -s, 'jq ... || true' preserved output
+            # emitted before a later parse failure. Comparison is on
+            # JSON-ENCODED strings (jq without -r): jq -r plus command
+            # substitution strips trailing newlines, so "foo" and
+            # "foo\n" would compare equal; the encoded forms differ.
+            # A missing/non-string .error yields null or another JSON
+            # value, never equal to the encoded expected string.
+            local f="$1" exp_json got
+            exp_json=$(jq -n --arg e "$2" '$e' 2>/dev/null)
+            if got=$(jq -se 'if length==1 then .[0].error else error("not-one-doc") end' "$f" 2>/dev/null); then
+              if [ "$got" = "$exp_json" ]; then echo yes; else echo no; fi
+            else echo no; fi
+          }
+          jq -n --arg e "$STAGING_USER_B_EMAIL" --arg p "$STAGING_USER_B_PASSWORD" '{email:$e,password:$p}' > loginB.json
+          s=$(curl -s -o loginB.body -w "%{http_code}" -D loginB.headers -c jarB.txt -b jarB.txt \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @loginB.json \
+            "$BASE/api/auth/login")
+          echo "t07_login_b=$s" >> results.txt
+          assert_eq t07_login_b "$s" "200"
+          # -- 7b. Setup B: own family + private account (CORRECTED, run 2) --
+          # Same root cause as T03b, for account B: create B's own family
+          # + one private account with B's OWN session before discovery,
+          # so T07 discovery can never hit an empty family list caused
+          # by missing setup. Failures here are setup assertions.
+          curl -s -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" -b jarB.txt -c jarB.txt "$BASE/api/families" -o famB_pre.json
+          fam_count_b=$(jq -se 'if length==1 and (.[0]|type=="array") then (.[0]|length) else error("bad") end' famB_pre.json 2>/dev/null || echo bad)
+          if [ "$fam_count_b" = "bad" ]; then echo "ASSERT_FAIL t07b_families_parse" >&2; exit 1; fi
+          created_b=no
+          if [ "$fam_count_b" = "0" ]; then
+            jq -n --arg n "Harness Family B" '{name:$n}' > famB_new.json
+            s=$(curl -s -o famB_new.body -w "%{http_code}" -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" -b jarB.txt -c jarB.txt -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @famB_new.json "$BASE/api/families")
+            assert_eq t07b_family_create_status "$s" "201"
+            if ! famB_pre_id=$(jq -rse 'if length==1 and (.[0].family.id|type=="string") then .[0].family.id else error("bad") end' famB_new.body 2>/dev/null); then echo "ASSERT_FAIL t07b_family_parse" >&2; exit 1; fi
+            created_b=yes
+            famB="$famB_pre_id"
+          else
+            if ! famB=$(jq -rse 'if length==1 and (.[0]|type=="array") and (.[0][0].family.id|type=="string") then .[0][0].family.id else error("bad") end' famB_pre.json 2>/dev/null); then echo "ASSERT_FAIL t07b_family_parse" >&2; exit 1; fi
+          fi
+          jq -n --arg f "$famB" --arg n "Harness Account B" '{familyId:$f,name:$n,kind:"cash",currency:"USD",balance:1000,source:"manual"}' > accB_new.json
+          s=$(curl -s -o accB_new.body -w "%{http_code}" -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" -b jarB.txt -c jarB.txt -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @accB_new.json "$BASE/api/accounts")
+          assert_eq t07b_account_create_status "$s" "201"
+          echo "t07b_family_created=$created_b" >> results.txt
+          echo "t07b_account_created=yes" >> results.txt
+          echo "t07b_family_found=yes" >> results.txt
+          # Own family ids, discovered from each user's own API only.
+          curl -s -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" -b jarA.txt -c jarA.txt "$BASE/api/families" -o famA.json
+          curl -s -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" -b jarB.txt -c jarB.txt "$BASE/api/families" -o famB.json
+          # JQ SANITISATION + EXACTLY-ONE-DOCUMENT (Codex findings,
+          # rounds 3 and 4): every response-processing jq call below
+          # suppresses stderr (2>/dev/null) so a parse or type error
+          # can never leak response content into the log, AND uses
+          # jq -s so the whole input must parse as exactly one
+          # document; a failed parse fails the step, never yields a
+          # partial value that the following asserts could pass.
+          # EXACTLY-ONE-DOCUMENT (Codex finding, round 4): jq -s
+          # slurps the whole input; a valid document followed by
+          # malformed JSON or a second document fails, and no partial
+          # id can be used. The -e flag makes jq exit non-zero on
+          # the error() branch, so a failed parse fails the step.
+          if ! famA=$(jq -rse 'if length==1 and (.[0]|type=="array") and (.[0][0].family.id|type=="string") then .[0][0].family.id else error("bad") end' famA.json 2>/dev/null); then echo "ASSERT_FAIL t07_family_a_parse" >&2; exit 1; fi
+          if ! famB=$(jq -rse 'if length==1 and (.[0]|type=="array") and (.[0][0].family.id|type=="string") then .[0][0].family.id else error("bad") end' famB.json 2>/dev/null); then echo "ASSERT_FAIL t07_family_b_parse" >&2; exit 1; fi
+          # Steps run in separate shells: persist the ids to files.
+          printf '%s' "$famA" > famA.txt
+          printf '%s' "$famB" > famB.txt
+          echo "t07_family_found_a=$([ -n "$famA" ] && echo yes || echo no)" >> results.txt
+          echo "t07_family_found_b=$([ -n "$famB" ] && echo yes || echo no)" >> results.txt
+          if [ -z "$famA" ]; then echo "ASSERT_FAIL t07_family_a" >&2; exit 1; fi
+          if [ -z "$famB" ]; then echo "ASSERT_FAIL t07_family_b" >&2; exit 1; fi
+          if [ "$famA" = "$famB" ]; then echo "ASSERT_FAIL t07_families_distinct" >&2; exit 1; fi
+          # Own accounts (count only) and the other family's account ids
+          # (recorded to a file, never printed) for the leak check.
+          curl -s -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" -b jarB.txt -c jarB.txt "$BASE/api/accounts?familyId=$famB" -o accB.json
+          # TYPE VALIDATION (Codex finding): .[].id on a non-array, or
+          # length on a non-array / string, must fail the step, not
+          # leak a jq diagnostic or silently produce a wrong count
+          # (length of a string is its character count, not an
+          # account count). Validate the array type first, with
+          # stderr suppressed, then extract with stderr suppressed
+          # and fail if the extraction itself fails.
+          # EXACTLY-ONE-DOCUMENT (Codex finding, round 4): every
+          # check below uses jq -s, so a valid first document followed
+          # by malformed JSON or a second document fails the step
+          # instead of yielding a partial id list or count.
+          if ! jq -se 'if length==1 and (.[0]|type=="array") and (.[0]|all(.id|type=="string")) then true else error("bad") end' accB.json >/dev/null 2>&1; then echo "ASSERT_FAIL t07_accounts_array" >&2; exit 1; fi
+          if ! jq -rse 'if length==1 and (.[0]|type=="array") then .[0][].id else error("bad") end' accB.json 2>/dev/null > accB.ids; then echo "ASSERT_FAIL t07_account_ids" >&2; exit 1; fi
+          if ! acc_count=$(jq -se 'if length==1 and (.[0]|type=="array") then (.[0]|length) else error("bad") end' accB.json 2>/dev/null); then echo "ASSERT_FAIL t07_account_count" >&2; exit 1; fi
+          case "$acc_count" in ''|*[!0-9]*) echo "ASSERT_FAIL t07_account_count" >&2; exit 1 ;; esac
+          echo "t07_own_account_count_b=$acc_count" >> results.txt
+          s_cross_acc=$(curl -s -o crossAcc.body -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -b jarA.txt -c jarA.txt "$BASE/api/accounts?familyId=$famB")
+          s_cross_mem=$(curl -s -o crossMem.body -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -b jarA.txt -c jarA.txt "$BASE/api/members?familyId=$famB")
+          s_cross_acc_rev=$(curl -s -o crossAccRev.body -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -b jarB.txt -c jarB.txt "$BASE/api/accounts?familyId=$famA")
+          leak=no
+          # GREP OPTION TERMINATION (Codex finding, round 5): the id
+          # is response-derived, so it must never be passed as a bare
+          # grep pattern: an id such as "--SECRET" would be parsed as
+          # an option, and grep could print it in an unsuppressed
+          # diagnostic. "-e" makes the id the pattern operand: -e
+          # consumes the next argument as the pattern even when it
+          # starts with a dash, and stderr is suppressed. NOTE: the
+          # literal form "grep -Fq -- -e <id>" was tested and is
+          # WRONG in GNU grep — after "--", "-e" is itself treated
+          # as a pattern and the id as a filename (exit 2, "No such
+          # file or directory"); "-e <id>" without "--" is the
+          # correct equivalent and is what is used here.
+          while IFS= read -r id; do
+            [ -n "$id" ] && grep -Fq -e "$id" crossAcc.body 2>/dev/null && leak=yes || true
+          done < accB.ids
+          echo "t07_cross_accounts_a_to_b=$s_cross_acc" >> results.txt
+          echo "t07_cross_accounts_a_to_b_exact_error=$(error_is crossAcc.body 'No pertenece a esta familia')" >> results.txt
+          echo "t07_cross_members_a_to_b=$s_cross_mem" >> results.txt
+          echo "t07_cross_members_a_to_b_exact_error=$(error_is crossMem.body 'No pertenece a esta familia')" >> results.txt
+          echo "t07_cross_accounts_b_to_a=$s_cross_acc_rev" >> results.txt
+          echo "t07_cross_accounts_b_to_a_exact_error=$(error_is crossAccRev.body 'No pertenece a esta familia')" >> results.txt
+          echo "t07_cross_response_contains_other_account_id=$leak" >> results.txt
+          assert_eq t07_cross_acc_status "$s_cross_acc" "403"
+          assert_eq t07_cross_acc_error "$(error_is crossAcc.body 'No pertenece a esta familia')" "yes"
+          assert_eq t07_cross_mem_status "$s_cross_mem" "403"
+          assert_eq t07_cross_mem_error "$(error_is crossMem.body 'No pertenece a esta familia')" "yes"
+          assert_eq t07_cross_acc_rev_status "$s_cross_acc_rev" "403"
+          assert_eq t07_cross_acc_rev_error "$(error_is crossAccRev.body 'No pertenece a esta familia')" "yes"
+          assert_eq t07_leak "$leak" "no"
+
+      # -- 8. Concurrent invitation acceptance ------------------------------
+      # LIMITATION, explicit (Codex finding): this is concurrent-request
+      # testing with final-state verification, NOT a proof that the two
+      # requests overlapped inside the handler. The go.txt barrier
+      # releases both requests together, which improves simultaneous
+      # launch, but sequential execution also yields 200,404. The
+      # final-state invariants (T08 API counts + T08b Postgres counts)
+      # prove exactly one acceptance happened and the code was consumed;
+      # they cannot by themselves prove a race occurred. Do not report
+      # this step as race proof.
+      # Prerequisite: B is NOT already a member of A's family and has no
+      # pending invitation there. If invite returns 409, the run stops
+      # here as a PREREQUISITE failure, not a security result.
+      - name: T08 concurrent invitation acceptance
+        run: |
+          assert_eq() { if [ "$2" != "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          famA=$(cat famA.txt)
+          if [ -z "$famA" ]; then echo "ASSERT_FAIL t08_family_a" >&2; exit 1; fi
+          jq -n --arg f "$famA" --arg n "Harness Invitee" --arg e "$STAGING_USER_B_EMAIL" '{familyId:$f,name:$n,email:$e}' > invite.json
+          s_inv=$(curl -s -o invite.body -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @invite.json \
+            -b jarA.txt -c jarA.txt "$BASE/api/members")
+          echo "t08_invite_create=$s_inv" >> results.txt
+          assert_eq t08_invite_create "$s_inv" "201"
+          # EXACTLY-ONE-DOCUMENT (Codex finding, round 4).
+          if ! jq -rse 'if length==1 and (.[0]|type=="object") and (.[0].inviteCode|type=="string") then .[0].inviteCode else error("bad") end' invite.body 2>/dev/null > token.txt; then echo "ASSERT_FAIL t08_token" >&2; exit 1; fi
+          if [ ! -s token.txt ]; then echo "ASSERT_FAIL t08_token" >&2; exit 1; fi
+          jq -n --arg t "$(cat token.txt)" '{token:$t}' > accept.json
+          cp jarB.txt jarB1.txt
+          cp jarB.txt jarB2.txt
+          # Explicit synchronization barrier: both workers block on the
+          # same barrier file and are released by one touch, so both
+          # requests are launched together (see limitation note above:
+          # launch together is not handler-overlap proof).
+          rm -f go.txt
+          ( while [ ! -f go.txt ]; do sleep 0.01; done; curl -s -o acc1.body -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @accept.json \
+            -b jarB1.txt -c jarB1.txt "$BASE/api/members/accept" > acc1.status ) &
+          p1=$!
+          ( while [ ! -f go.txt ]; do sleep 0.01; done; curl -s -o acc2.body -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @accept.json \
+            -b jarB2.txt -c jarB2.txt "$BASE/api/members/accept" > acc2.status ) &
+          p2=$!
+          sleep 1
+          touch go.txt
+          echo "t08_barrier_used=yes" >> results.txt
+          wait $p1 || { echo "ASSERT_FAIL t08_worker1" >&2; exit 1; }
+          wait $p2 || { echo "ASSERT_FAIL t08_worker2" >&2; exit 1; }
+          s1=$(cat acc1.status); s2=$(cat acc2.status)
+          sorted=$(printf '%s\n%s\n' "$s1" "$s2" | sort | tr '\n' ',' | sed 's/,$//')
+          echo "t08_concurrent_accept_statuses_sorted=$sorted" >> results.txt
+          assert_eq t08_sorted "$sorted" "200,404"
+          # Membership after the race: exactly one active membership for
+          # B in A's family, no pending duplicate. Counts only.
+          curl -s -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" -b jarA.txt -c jarA.txt "$BASE/api/members?familyId=$famA" -o membersA.json
+          # TYPE VALIDATION + STDERR SANITISATION + EXACTLY-ONE-
+          # DOCUMENT (Codex findings, rounds 3 and 4): .members must
+          # be an array before any .members[] iteration, every jq
+          # call suppresses stderr and uses -s so the whole input
+          # must parse as exactly one document, and a parse or type
+          # failure fails the step outright, never an empty pass.
+          # EXACTLY-ONE-DOCUMENT (Codex finding, round 4): every
+          # extraction below uses jq -s, so a valid first document
+          # followed by malformed JSON or a second document fails the
+          # step instead of yielding a partial count.
+          if ! jq -se 'if length==1 and (.[0]|type=="object") and (.[0].members|type=="array") then true else error("bad") end' membersA.json >/dev/null 2>&1; then echo "ASSERT_FAIL t08_members_array" >&2; exit 1; fi
+          if ! members_total=$(jq -se 'if length==1 and (.[0]|type=="object") and (.[0].members|type=="array") then (.[0].members|length) else error("bad") end' membersA.json 2>/dev/null); then echo "ASSERT_FAIL t08_members_total_parse" >&2; exit 1; fi
+          if ! invitee_active=$(jq -se --arg e "$STAGING_USER_B_EMAIL" 'if length==1 and (.[0]|type=="object") and (.[0].members|type=="array") then ([.[0].members[] | select(.email==$e and .status=="active")] | length) else error("bad") end' membersA.json 2>/dev/null); then echo "ASSERT_FAIL t08_active_parse" >&2; exit 1; fi
+          if ! invitee_pending=$(jq -se --arg e "$STAGING_USER_B_EMAIL" 'if length==1 and (.[0]|type=="object") and (.[0].members|type=="array") then ([.[0].members[] | select(.email==$e and .status=="invited")] | length) else error("bad") end' membersA.json 2>/dev/null); then echo "ASSERT_FAIL t08_pending_parse" >&2; exit 1; fi
+          case "$members_total" in ''|*[!0-9]*) echo "ASSERT_FAIL t08_members_total" >&2; exit 1 ;; esac
+          case "$invitee_active" in ''|*[!0-9]*) echo "ASSERT_FAIL t08_active_count" >&2; exit 1 ;; esac
+          case "$invitee_pending" in ''|*[!0-9]*) echo "ASSERT_FAIL t08_pending_count" >&2; exit 1 ;; esac
+          echo "t08_members_total=$members_total" >> results.txt
+          echo "t08_invitee_active_once=$invitee_active" >> results.txt
+          echo "t08_invitee_pending=$invitee_pending" >> results.txt
+          assert_eq t08_active "$invitee_active" "1"
+          assert_eq t08_pending "$invitee_pending" "0"
+          # Replay of the consumed code: must be 404, and B's login
+          # afterwards must still succeed (no state corruption).
+          s_replay=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @accept.json \
+            -b jarB.txt -c jarB.txt "$BASE/api/members/accept")
+          echo "t08_replay_consumed_code=$s_replay" >> results.txt
+          assert_eq t08_replay "$s_replay" "404"
+
+      # -- 8b. Independent Postgres verification of the race outcome -----
+      # API/UI membership counts alone are insufficient. The staging
+      # Postgres store is a single JSONB row (lib/store.ts: table
+      # fwos_state, id 1, column data JSONB, members array inside data).
+      # This step counts INSIDE that JSONB with SQL only and records
+      # counts, never member rows, emails, hashes, or the state
+      # document. It uses a READ-ONLY database URL supplied only as the
+      # environment secret STAGING_COUNT_DATABASE_URL (name only in
+      # this file, value never printed). A full-privilege DATABASE_URL
+      # must NOT be provisioned for this step.
+      # SANITISATION (Codex finding): psql stderr is NEVER printed.
+      # psql runs with -X (no startup file) and ON_ERROR_STOP=1; its
+      # stderr goes to a file that is classified only as
+      # connection_failure or query_failure (by keyword match on the
+      # error file, never echoed) and deleted in cleanup. Query output
+      # is validated as numeric only before any comparison; non-numeric
+      # output fails the step. Connection errors can disclose
+      # connection metadata and SQL errors can include substituted
+      # query content, including the email — neither is ever echoed,
+      # and GitHub secret masking is only a backstop, not the mechanism.
+      # READ-ONLY PROOF REQUIRED AT ACTIVATION (not assumed here):
+      # before provisioning, demonstrate that the role behind
+      # STAGING_COUNT_DATABASE_URL is read-only (no INSERT, UPDATE,
+      # DELETE, GRANT, or DDL on fwos_state) AND that its database is
+      # the staging Preview database, not Production. If that proof is
+      # not produced, T08b must be reported as a prerequisite failure,
+      # never as a pass.
+      # PREREQUISITE FAILURE (not a security pass, not a security fail):
+      # if the read-only URL is absent or psql cannot be installed,
+      # this step fails the run as t08_db_check_available=no, and the
+      # run must be reported as "prerequisite failure: DB verification
+      # unavailable", never as a concurrency pass.
+      - name: T08b Postgres verification of concurrent acceptance
+        run: |
+          assert_eq() { if [ "$2" != "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          famA=$(cat famA.txt)
+          if [ -z "$famA" ]; then echo "ASSERT_FAIL t08b_family_a" >&2; exit 1; fi
+          if [ -z "$STAGING_COUNT_DATABASE_URL" ]; then
+            echo "t08_db_check_available=no" >> results.txt
+            echo "t08_db_prerequisite=read-only database URL not provisioned" >> results.txt
+            exit 1
+          fi
+          echo "t08_db_check_available=yes" >> results.txt
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client || {
+              echo "t08_db_check_available=no" >> results.txt
+              echo "t08_db_prerequisite=psql unavailable" >> results.txt
+              exit 1
+            }
+          fi
+          # Counts only, via JSONB array elements. The URL is passed as
+          # a variable reference; logs show the variable name, never
+          # the value. No row content is selected or printed. Each
+          # query's stderr is classified, never echoed.
+          # SQL DELIVERY (Codex finding): psql does NOT interpolate
+          # its variables in a -c SQL argument, so the previous
+          # revision's -c "$q" with :'fam' / :'em' would fail rather
+          # than perform the verification. The query is therefore
+          # written to a file and run with psql -f, where :'var'
+          # interpolation DOES apply (same for stdin). The file is
+          # runner-local and deleted in cleanup.
+          # NOTE: run_count helper below is retained from 332429b but is
+          # no longer called by T08b (count function used instead).
+          run_count() {
+            # $1 = query text (a static string in this script, with
+            # :'fam' / :'em' placeholders). Prints the count on
+            # stdout, or exits 1 after recording only a failure
+            # category (never the stderr text).
+            local q="$1" out
+            printf '%s' "$q" > db_query.sql
+            out=$(psql -X -v ON_ERROR_STOP=1 "$STAGING_COUNT_DATABASE_URL" -t -A -v fam="$famA" -v em="$STAGING_USER_B_EMAIL" -f db_query.sql 2>db.err) || {
+              if grep -qi "could not connect\|connection refused\|connection timed out\|no pg_hba\|password authentication failed" db.err 2>/dev/null; then
+                echo "t08_db_failure=connection_failure" >> results.txt
+              else
+                echo "t08_db_failure=query_failure" >> results.txt
+              fi
+              exit 1
+            }
+            # SINGLE-LINE VALIDATION (Codex finding): psql -t -A
+            # count(*) returns exactly one row, so exactly one
+            # non-empty line is required. Validating AFTER stripping
+            # all whitespace would turn "1\n0" into "10" and pass.
+            # Command substitution already strips trailing newlines,
+            # so a normal result is one non-empty line; two lines,
+            # or zero, fail the step here, before any stripping.
+            if [ "$(printf '%s' "$out" | grep -c .)" != "1" ]; then echo "ASSERT_FAIL t08b_single_line_output" >&2; exit 1; fi
+            out=$(printf '%s' "$out" | tr -d '[:space:]')
+            case "$out" in ''|*[!0-9]*) echo "ASSERT_FAIL t08b_numeric_output" >&2; exit 1 ;; esac
+            printf '%s' "$out"
+          }
+          # COUNT FUNCTION (GPT direction: minimise DB access). The
+          # harness role has EXECUTE on fwos_harness_t08b_counts ONLY
+          # and NO SELECT on fwos_state. The SECURITY DEFINER function
+          # (owned by a role with SELECT on fwos_state, created at
+          # activation — NOT in this draft, NO database modified here)
+          # returns exactly one row with three counts and nothing else:
+          # active members for (family, email), invited members, and
+          # consumed-active members (active with null invite hash and
+          # expiry). If the function is absent, psql fails and this
+          # step fails as a prerequisite failure, never a pass.
+          # Output is one line, three pipe-separated numeric fields;
+          # validated numeric-only before any comparison.
+          printf '%s' "SELECT * FROM fwos_harness_t08b_counts(:'fam', :'em');" > db_query.sql
+          out=$(psql -X -v ON_ERROR_STOP=1 "$STAGING_COUNT_DATABASE_URL" -t -A -F '|' -v fam="$famA" -v em="$STAGING_USER_B_EMAIL" -f db_query.sql 2>db.err) || {
+            if grep -qi "does not exist\|undefined_function" db.err 2>/dev/null; then
+              echo "t08_db_failure=prerequisite_failure" >> results.txt
+              echo "t08_db_prerequisite=count function absent" >> results.txt
+            elif grep -qi "could not connect\\|connection refused\\|connection timed out\\|no pg_hba\\|password authentication failed" db.err 2>/dev/null; then
+              echo "t08_db_failure=connection_failure" >> results.txt
+            else
+              echo "t08_db_failure=query_failure" >> results.txt
+            fi
+            exit 1
+          }
+          if [ "$(printf '%s' "$out" | grep -c .)" != "1" ]; then echo "ASSERT_FAIL t08b_single_line_output" >&2; exit 1; fi
+          # EXACT THREE-FIELD VALIDATION (Codex finding): the whole
+          # output must be exactly three pipe-separated numeric fields.
+          # "1|0|1|unexpected" must FAIL, not pass on its first three
+          # fields. Only after this whole-output match is extraction
+          # performed.
+          if ! printf '%s' "$out" | grep -qxE '[0-9]+\|[0-9]+\|[0-9]+'; then echo "ASSERT_FAIL t08b_exact_three_fields" >&2; exit 1; fi
+          db_active=$(printf '%s' "$out" | cut -d'|' -f1)
+          db_invited=$(printf '%s' "$out" | cut -d'|' -f2)
+          db_consumed=$(printf '%s' "$out" | cut -d'|' -f3)
+          case "$db_active" in ''|*[!0-9]*) echo "ASSERT_FAIL t08b_active_numeric" >&2; exit 1 ;; esac
+          case "$db_invited" in ''|*[!0-9]*) echo "ASSERT_FAIL t08b_invited_numeric" >&2; exit 1 ;; esac
+          case "$db_consumed" in ''|*[!0-9]*) echo "ASSERT_FAIL t08b_consumed_numeric" >&2; exit 1 ;; esac
+          echo "t08_db_active_members_for_invitee=$db_active" >> results.txt
+          echo "t08_db_invited_members_for_invitee=$db_invited" >> results.txt
+          echo "t08_db_consumed_active_members=$db_consumed" >> results.txt
+          assert_eq t08b_active "$db_active" "1"
+          assert_eq t08b_invited "$db_invited" "0"
+          assert_eq t08b_consumed "$db_consumed" "1"
+
+      # -- 9. Logout clears cookies; session is gone afterwards ------------
+      - name: T09 logout clears session
+        run: |
+          assert_eq() { if [ "$2" != "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          s=$(curl -s -o /dev/null -w "%{http_code}" -D logout.headers -c jarA.txt -b jarA.txt \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" "$BASE/api/auth/logout" -X POST)
+          echo "t09_logout=$s" >> results.txt
+          assert_eq t09_logout "$s" "200"
+          cleared_a=no; cleared_b=no
+          # EXACT Max-Age=0 (Codex finding): "max-age=01" is nonzero
+          # and must not pass. Parse attributes after the first
+          # semicolon and match the whole attribute line exactly.
+          for _pair in "fwos_session:cleared_a" "fwos_refresh:cleared_b"; do
+            _n="${_pair%%:*}"; _v="${_pair##*:}"
+            _line=$(grep -i "^set-cookie: ${_n}=" logout.headers | head -n 1 || true)
+            # TERMINAL CR (Codex finding, r2): same CRLF rule as T03 —
+            # strip only the single terminal CR, so "max-age=0\r" does
+            # not fail the exact Max-Age=0 match.
+            _line="${_line%$'\r'}"
+            _attrs=$(printf '%s' "$_line" | cut -d';' -f2- | tr ';' '\n' | sed 's/^ *//;s/ *$//' | tr '[:upper:]' '[:lower:]' || true)
+            if printf '%s\n' "$_attrs" | grep -qx 'max-age=0'; then eval "$_v=yes"; fi
+          done
+          echo "t09_logout_clears_session_cookie=$cleared_a" >> results.txt
+          echo "t09_logout_clears_refresh_cookie=$cleared_b" >> results.txt
+          # Both clearing flags are ASSERTED here, not merely echoed
+          # (Codex finding: the previous revision recorded them and
+          # then checked only the subsequent 401).
+          assert_eq t09_clears_session "$cleared_a" "yes"
+          assert_eq t09_clears_refresh "$cleared_b" "yes"
+          s_after=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -b jarA.txt -c jarA.txt "$BASE/api/families")
+          echo "t09_families_after_logout=$s_after" >> results.txt
+          assert_eq t09_after_logout "$s_after" "401"
+
+      # -- 10. Recovery-purpose checks, safely testable only ---------------
+      # Every rejected-key variant is tested individually, because
+      # rejectKeys (lib/auth-flow.ts) throws on the first present key:
+      # recover rejects redirect_to, access_token, refresh_token (each
+      # in its own request, with headers captured and session-cookie
+      # absence asserted for each);
+      # reset-password rejects access_token, refresh_token, token_hash,
+      # redirect_to. Each rejection is 400 with 'Solicitud invalida'
+      # and sets no session cookie. A body carrying all keys at once
+      # would NOT prove each key is rejected, so the header claim now
+      # matches what is actually tested.
+      - name: T10 recovery purpose checks
+        run: |
+          assert_eq() { if [ "$2" != "$3" ]; then echo "ASSERT_FAIL $1" >&2; exit 1; fi; }
+          error_is() {
+            # EXACTLY-ONE-DOCUMENT + EXACT-STRING (Codex finding):
+            # jq -s slurps the WHOLE input: a valid object followed by
+            # malformed JSON, or a second document, makes jq fail and
+            # yields NO output, so no partial result can satisfy the
+            # comparison. Without -s, 'jq ... || true' preserved output
+            # emitted before a later parse failure. Comparison is on
+            # JSON-ENCODED strings (jq without -r): jq -r plus command
+            # substitution strips trailing newlines, so "foo" and
+            # "foo\n" would compare equal; the encoded forms differ.
+            # A missing/non-string .error yields null or another JSON
+            # value, never equal to the encoded expected string.
+            local f="$1" exp_json got
+            exp_json=$(jq -n --arg e "$2" '$e' 2>/dev/null)
+            if got=$(jq -se 'if length==1 then .[0].error else error("not-one-doc") end' "$f" 2>/dev/null); then
+              if [ "$got" = "$exp_json" ]; then echo yes; else echo no; fi
+            else echo no; fi
+          }
+          no_session_cookie() {
+            # $1 = headers file. Prints yes if neither fwos_session
+            # nor fwos_refresh is set.
+            if grep -qi "^set-cookie: fwos_session=" "$1" || grep -qi "^set-cookie: fwos_refresh=" "$1"; then echo no; else echo yes; fi
+          }
+          # (a) recover body carrying redirect_to is rejected, no email
+          #     signal, no session. Each rejected recover key is tested
+          #     in its own request with headers captured, and session-
+          #     cookie absence is asserted for EACH one (Codex finding:
+          #     the previous revision asserted status only for the
+          #     recover keys). Grounding (lib/auth-flow.ts recover):
+          #     rejectKeys(b, ['redirect_to', 'access_token',
+          #     'refresh_token']) throws badRequest('Solicitud invalida')
+          #     before any provider call, so each rejection is 400 with
+          #     that exact error and sets no session cookie.
+          challenge=$(python3 -c "import secrets,hashlib,base64; v=secrets.token_urlsafe(32); print(base64.urlsafe_b64encode(hashlib.sha256(v.encode()).digest()).decode().rstrip('='))")
+          jq -n --arg e "$STAGING_USER_A_EMAIL" --arg c "$challenge" --arg r "https://example.invalid/reset" '{email:$e,code_challenge:$c,code_challenge_method:"s256",redirect_to:$r}' > recoverBad.json
+          s_rec_bad=$(curl -s -o recoverBad.body -w "%{http_code}" -D recoverBad.headers \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @recoverBad.json \
+            "$BASE/api/auth/recover")
+          echo "t10_recover_with_redirect_to=$s_rec_bad" >> results.txt
+          echo "t10_recover_redirect_to_exact_error=$(error_is recoverBad.body 'Solicitud invalida')" >> results.txt
+          echo "t10_recover_redirect_to_no_session=$(no_session_cookie recoverBad.headers)" >> results.txt
+          assert_eq t10_recover_redirect_status "$s_rec_bad" "400"
+          assert_eq t10_recover_redirect_error "$(error_is recoverBad.body 'Solicitud invalida')" "yes"
+          assert_eq t10_recover_redirect_no_session "$(no_session_cookie recoverBad.headers)" "yes"
+          # (a2) recover body carrying access_token is likewise rejected.
+          jq -n --arg e "$STAGING_USER_A_EMAIL" --arg c "$challenge" --arg t "not-a-real-token" '{email:$e,code_challenge:$c,code_challenge_method:"s256",access_token:$t}' > recoverBadToken.json
+          s_rec_tok=$(curl -s -o recoverBadToken.body -w "%{http_code}" -D recoverBadToken.headers \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @recoverBadToken.json \
+            "$BASE/api/auth/recover")
+          echo "t10_recover_with_access_token=$s_rec_tok" >> results.txt
+          echo "t10_recover_access_token_exact_error=$(error_is recoverBadToken.body 'Solicitud invalida')" >> results.txt
+          echo "t10_recover_access_token_no_session=$(no_session_cookie recoverBadToken.headers)" >> results.txt
+          assert_eq t10_recover_token_status "$s_rec_tok" "400"
+          assert_eq t10_recover_token_error "$(error_is recoverBadToken.body 'Solicitud invalida')" "yes"
+          assert_eq t10_recover_token_no_session "$(no_session_cookie recoverBadToken.headers)" "yes"
+          # (a3) recover body carrying refresh_token is likewise rejected
+          #     (this key was claimed in the header comment of the
+          #     previous revision but had no request of its own).
+          jq -n --arg e "$STAGING_USER_A_EMAIL" --arg c "$challenge" --arg t "not-a-real-token" '{email:$e,code_challenge:$c,code_challenge_method:"s256",refresh_token:$t}' > recoverBadRefresh.json
+          s_rec_ref=$(curl -s -o recoverBadRefresh.body -w "%{http_code}" -D recoverBadRefresh.headers \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @recoverBadRefresh.json \
+            "$BASE/api/auth/recover")
+          echo "t10_recover_with_refresh_token=$s_rec_ref" >> results.txt
+          echo "t10_recover_refresh_token_exact_error=$(error_is recoverBadRefresh.body 'Solicitud invalida')" >> results.txt
+          echo "t10_recover_refresh_token_no_session=$(no_session_cookie recoverBadRefresh.headers)" >> results.txt
+          assert_eq t10_recover_refresh_status "$s_rec_ref" "400"
+          assert_eq t10_recover_refresh_error "$(error_is recoverBadRefresh.body 'Solicitud invalida')" "yes"
+          assert_eq t10_recover_refresh_no_session "$(no_session_cookie recoverBadRefresh.headers)" "yes"
+          # (b) reset-password body carrying a token key is rejected
+          #     before any provider call, and sets no session cookie.
+          #     Each key is tested in its own request. The response
+          #     body is CAPTURED and its error compared exactly
+          #     (Codex finding: the previous revision discarded it
+          #     with -o /dev/null while the header comment claimed
+          #     an exact-error check). Grounding (lib/auth-flow.ts
+          #     resetPassword): rejectKeys(b, ['access_token',
+          #     'refresh_token', 'token_hash', 'redirect_to'])
+          #     throws badRequest('Solicitud invalida') before any
+          #     provider call, so each rejection is 400 with that
+          #     exact error and sets no session cookie.
+          for key in access_token refresh_token token_hash redirect_to; do
+            jq -n --arg k "$key" '{code:"invalid-test-code",code_verifier:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",password:"ResetTest123"} + {($k):"not-a-real-token"}' > "resetBad_$key.json"
+            s_reset_bad=$(curl -s -o "resetBad_$key.body" -w "%{http_code}" -D "resetBad_$key.headers" \
+              -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+              -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @"resetBad_$key.json" \
+              "$BASE/api/auth/reset-password")
+            echo "t10_reset_with_${key}_key=$s_reset_bad" >> results.txt
+            echo "t10_reset_${key}_exact_error=$(error_is "resetBad_$key.body" 'Solicitud invalida')" >> results.txt
+            echo "t10_reset_${key}_no_session=$(no_session_cookie "resetBad_$key.headers")" >> results.txt
+            assert_eq "t10_reset_${key}_status" "$s_reset_bad" "400"
+            assert_eq "t10_reset_${key}_error" "$(error_is "resetBad_$key.body" 'Solicitud invalida')" "yes"
+            assert_eq "t10_reset_${key}_no_session" "$(no_session_cookie "resetBad_$key.headers")" "yes"
+          done
+          # (c) A session cookie does not authorize a reset, and a failed
+          #     reset does not change the password: the original password
+          #     still logs in afterwards. Invalid code returns 422 with
+          #     the exact reset-invalid message (lib/auth-flow.ts).
+          verifier=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+          jq -n --arg c "invalid-test-code" --arg v "$verifier" --arg p "ResetTest123" '{code:$c,code_verifier:$v,password:$p}' > resetInvalid.json
+          s_reset_inv=$(curl -s -o resetInv.body -w "%{http_code}" -D resetInv.headers \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @resetInvalid.json \
+            -b jarB.txt -c jarB.txt "$BASE/api/auth/reset-password")
+          echo "t10_reset_invalid_code_with_session_cookie=$s_reset_inv" >> results.txt
+          echo "t10_reset_invalid_exact_error=$(error_is resetInv.body 'Enlace invalido, vencido o ya usado.')" >> results.txt
+          echo "t10_reset_invalid_no_session=$(no_session_cookie resetInv.headers)" >> results.txt
+          assert_eq t10_reset_invalid_status "$s_reset_inv" "422"
+          assert_eq t10_reset_invalid_error "$(error_is resetInv.body 'Enlace invalido, vencido o ya usado.')" "yes"
+          assert_eq t10_reset_invalid_no_session "$(no_session_cookie resetInv.headers)" "yes"
+          jq -n --arg e "$STAGING_USER_B_EMAIL" --arg p "$STAGING_USER_B_PASSWORD" '{email:$e,password:$p}' > loginB2.json
+          s_login_again=$(curl -s -o /dev/null -w "%{http_code}" -c jarB2b.txt -b jarB2b.txt \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @loginB2.json \
+            "$BASE/api/auth/login")
+          echo "t10_login_after_failed_reset=$s_login_again" >> results.txt
+          assert_eq t10_login_after_failed_reset "$s_login_again" "200"
+          # (d) Recover for an unknown address is RECORDED ONLY, not
+          #     asserted: the provider's response for an unknown address
+          #     is provider behavior, and this harness deliberately does
+          #     not send a real recovery email to a test account from
+          #     the runner. Compare the recorded status afterwards with
+          #     the known-address generic 200 already evidenced in
+          #     Step 6 browser testing; any difference is an existence-
+          #     signal finding to report, not a pass.
+          challenge2=$(python3 -c "import secrets,hashlib,base64; v=secrets.token_urlsafe(32); print(base64.urlsafe_b64encode(hashlib.sha256(v.encode()).digest()).decode().rstrip('='))")
+          jq -n --arg e "usuario-inexistente-harness@example.com" --arg c "$challenge2" '{email:$e,code_challenge:$c,code_challenge_method:"s256"}' > recoverUnknown.json
+          s_rec_unk=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "x-vercel-trusted-oidc-idp-token: $OIDC_TOKEN" \
+            -H "Origin: $ORIGIN" -H "Content-Type: application/json" -d @recoverUnknown.json \
+            "$BASE/api/auth/recover")
+          echo "t10_recover_unknown_address_record_only=$s_rec_unk" >> results.txt
+
+      - name: Summary (sanitized results only)
+        if: always()
+        run: |
+          echo "--- sanitized results (statuses and flags only) ---"
+          cat results.txt
+          echo "--- end results ---"
+
+      - name: Cleanup runner-local secrets and tokens (always, best-effort)
+        if: always()
+        run: |
+          # Best-effort: this step runs on normal completion, but it
+          # cannot be guaranteed after an abrupt runner termination.
+          # Sensitive files are therefore never printed, and are
+          # runner-local only.
+          rm -f loginA.json loginB.json loginB2.json loginWrong.json invite.json accept.json acceptBogus.json \
+            recoverBad.json recoverBadToken.json recoverBadRefresh.json recoverUnknown.json resetBad.json resetBad_access_token.json resetBad_refresh_token.json resetBad_token_hash.json resetBad_redirect_to.json resetInvalid.json token.txt famA.txt famB.txt go.txt \
+            recoverBad.headers recoverBadToken.headers recoverBadRefresh.headers recoverBadRefresh.body recoverBadToken.body \
+            jarA.txt jarB.txt jarB1.txt jarB2.txt jarB2b.txt wrongJar.txt \
+            loginA.body loginB.body loginA.headers loginB.headers wrong.body wrong.headers logout.headers resetBad.headers resetBad_access_token.headers resetBad_refresh_token.headers resetBad_token_hash.headers resetBad_redirect_to.headers resetBad_access_token.body resetBad_refresh_token.body resetBad_token_hash.body resetBad_redirect_to.body resetInv.headers resetInv.body recoverBad.body \
+            root.body api.body root.headers api.headers foreign.body missing.body same.body fwdSame.body fwdRescue.body \
+            famA.json famB.json accB.json accB.ids crossAcc.body crossMem.body crossAccRev.body famA_pre.json famB_pre.json famA_new.json famA_new.body accA_new.json accA_new.body famB_new.json famB_new.body accB_new.json accB_new.body \
+            invite.body membersA.json acc1.body acc2.body acc1.status acc2.status db.err db_query.sql
+          echo "cleanup_done=yes"
