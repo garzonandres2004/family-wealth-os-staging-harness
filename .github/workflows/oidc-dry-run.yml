@@ -1,0 +1,39 @@
+# Secret-free OIDC + reviewer-gate dry run. No staging data access, no secrets.
+# Purpose: prove (1) the staging-http-checks environment approval gate works
+# (the job must NOT execute without reviewer approval), and (2) a minted GitHub
+# OIDC token carries the expected claims. The token is NEVER printed, logged,
+# stored, or passed anywhere. Only boolean assertions are printed.
+name: oidc-dry-run
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    environment: staging-http-checks
+    steps:
+      - name: Mint OIDC token and assert claims (booleans only)
+        id: oidc
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken();
+            core.setSecret(token);
+            // Decode payload only; never print the token itself.
+            const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
+            const checks = {
+              iss_is_github: payload.iss === 'https://token.actions.githubusercontent.com',
+              aud_present: typeof payload.aud === 'string' && payload.aud.length > 0,
+              repository_is_this_repo: payload.repository === 'garzonandres2004/family-wealth-os-staging-harness',
+              repository_id_present: typeof payload.repository_id === 'string' && payload.repository_id.length > 0,
+              environment_is_staging_http_checks: payload.environment === 'staging-http-checks',
+              ref_is_main: payload.ref === 'refs/heads/main',
+              workflow_sha_present: typeof payload.workflow_sha === 'string' && payload.workflow_sha.length > 0,
+              event_is_workflow_dispatch: payload.event_name === 'workflow_dispatch',
+              sub_contains_environment: typeof payload.sub === 'string' && payload.sub.includes(':environment:staging-http-checks'),
+            };
+            for (const [k, v] of Object.entries(checks)) core.info(`${k}=${v ? 'yes' : 'no'}`);
+            const failed = Object.entries(checks).filter(([, v]) => !v);
+            if (failed.length > 0) core.setFailed(`OIDC claim assertion failed: ${failed.map(([k]) => k).join(',')}`);
