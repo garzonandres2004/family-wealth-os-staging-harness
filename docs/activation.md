@@ -16,11 +16,78 @@ A consolidated run may be dispatched only when **all** of the following hold:
 
 If any condition fails, the run is denied and this package is not activated.
 
+## Corrected run 2 — what changed from run 1 (READ FIRST)
+
+**Run 1 result (2026-11-04, run 41797218689, SHA 82a0fa2, conclusion
+failure):** T00–T06 PASSED. T07 FAILED at `t07_family_a_parse`. T08,
+T08b, T09, T10 were SKIPPED, not failed. Run 1 proved the OIDC,
+protection, cookie, wrong-password, CSRF, and forged-header controls;
+it did NOT prove two-family isolation, concurrent invitation
+acceptance, logout, or recovery-purpose checks. Those remain unproven.
+
+**Root cause (setup gap, not an app security failure):** the two fresh
+Option A accounts had NO family and NO private account, while T07
+discovers each family from that user's own `/api/families` call and
+parses `.[0].family.id`. An empty list failed the parse mid-run.
+
+**Fix CHOSEN — option (a): harness creates its own setup.** New steps
+T03b (account A, after login) and T07b (account B, after login) create,
+with each account's OWN authenticated session, that account's family
+(POST `/api/families` `{name}` -> 201) plus one private account (POST
+`/api/accounts` `{familyId, name, kind: "cash", currency: "USD",
+balance: 1000, source: "manual"}` -> 201, synthetic test data only)
+BEFORE T07 discovery. If a family already exists, the existing first
+family is used and only the account is created. Only counts/booleans
+are recorded; ids stay runner-local files, exactly as `famA.txt` /
+`famB.txt` already were. T07 can therefore never fail on an empty
+family list caused by missing setup. If creation itself fails, the
+failing step is a clearly labelled setup assertion (`t03b_*` /
+`t07b_*`), never a T07 parse failure.
+
+**Option (b) REJECTED — activation-time family creation, with reason:**
+creating families before dispatch (via API or UI) would put test data
+creation outside the reviewed, versioned harness, depend on a manual
+browser step whose result is not asserted by the run itself, and could
+silently drift (wrong account, wrong family, stale data) between
+activation and dispatch with no in-run check. Option (a) keeps the
+setup inside the Codex-reviewed workflow, asserted by the run, and
+repeatable for any fresh pair of accounts.
+
+**Vercel rule re-add is a prerequisite, NOT done by this package:**
+run 1 cleanup removed the temporary Trusted Sources rule (default).
+Before any run 2 dispatch, exactly one Preview-only rule with the same
+claims as before must be re-added (issuer
+`https://token.actions.githubusercontent.com`, aud
+`https://github.com/garzonandres2004`, repo
+`garzonandres2004/family-wealth-os-staging-harness`, branch `main`,
+environment `staging-http-checks`, Applies-to Preview only) and read
+back in full. Dispatch is FORBIDDEN until that read-back confirms
+exactly one rule, Preview only, no Production scope. This package
+does NOT add the rule; activation adds it, then removes it again in
+cleanup.
+
+**TEMP-from-PUBLIC revocation (staging only, disclosed, NOT silently
+restored):** during run 1 setup, a CREATE TEMP TABLE test as the
+harness role unexpectedly SUCCEEDED because TEMP on the staging
+database was granted via PUBLIC. TEMP was then revoked from PUBLIC on
+the staging database only, after which the retest failed as required.
+That revocation REMAINS in place. It is a staging-only hardening, not
+a secret and not an exposure, and it is NOT restored by cleanup unless
+GPT directs otherwise. The corrected negative-test list therefore
+includes CREATE TEMP TABLE failing.
+
+**Run 1 authorization is spent.** Run 1 was authorized for no more
+than one consolidated run, and that run was dispatched. Run 2 requires
+a SEPARATE founder approval naming the NEW exact SHA of this corrected
+package, the Option A method, and the single run. The founder's
+in-principle fresh approval (2026-11-04 01:11 MST) does NOT by itself
+authorize dispatch.
+
 ## What this package contains
 
 | File | Contents |
 |---|---|
-| `.github/workflows/staging-http-checks.yml` | The consolidated harness: T00 OIDC self-check, T01–T10 (including T08b count-function call), Summary, Cleanup. `workflow_dispatch` only. Job permissions `contents: read` + `id-token: write` only. Environment `staging-http-checks` only. |
+| `.github/workflows/staging-http-checks.yml` | The consolidated harness: T00 OIDC self-check, T01–T10 (including T08b count-function call) PLUS corrected setup steps T03b (A family + account) and T07b (B family + account), Summary, Cleanup. `workflow_dispatch` only. Job permissions `contents: read` + `id-token: write` only. Environment `staging-http-checks` only. |
 | `docs/count-function-t08b.sql` | The T08b count-function body, **design only, for Codex review**. It is NOT applied by this package. Creation belongs to Gate C activation, on the staging database only. |
 | `docs/activation.md` (this file) | Secret inventory/lifecycle, activation order, rollback plan, limitations, disclosure inventory. |
 | `README.md` | Repository statement (staging-only, no credentials, no production identifiers). Updated to point at this activation document. |
@@ -98,7 +165,9 @@ or deleted immediately after the single run, and their secrets deleted
 with them.
 
 This **deviates** from in-run account creation: accounts exist before the
-run starts. The deviation is accepted (GPT direction) for a one-time
+run starts. Their families and private accounts, however, are created
+IN-RUN by T03b/T07b (see 'Corrected run 2' above); activation does
+NOT pre-create families. The deviation is accepted (GPT direction) for a one-time
 security verification and does not weaken the concurrent-invitation test,
 provided the invitation itself is freshly generated during the run (T08).
 No mailbox API integration, no confirmation-link parser, no mailbox
@@ -116,8 +185,11 @@ The harness role receives EXECUTE on that function only, NO SELECT on
 
 Before provisioning, the role must pass negative tests (pass/fail only,
 error text classified, never echoed): function SELECT-count succeeds;
-INSERT/UPDATE/DELETE/CREATE TABLE fail; auth-schema SELECT fails; the
-database host contains the staging ref and NOT the production ref.
+INSERT/UPDATE/DELETE/CREATE TABLE/CREATE TEMP TABLE fail; auth-schema
+SELECT fails; direct SELECT on `fwos_state` fails; the database host
+contains the staging ref and NOT the production ref. (CREATE TEMP
+TABLE failed only after the staging TEMP-from-PUBLIC revocation
+noted in 'Corrected run 2'; that revocation remains in place.)
 Any failure is a prerequisite failure: the role is dropped, no run happens.
 
 If the count function proves impractical, the fallback is the original
@@ -135,7 +207,11 @@ family data.
 
 1. Gate A (public repo + disclosure) and Gate B (exactly one Preview-only
    Vercel Trusted Sources/OIDC rule) approved separately by the founder
-   (2026-11-03 23:44 MST) — done, rule read back and verified.
+   (2026-11-03 23:44 MST) — done, rule read back and verified for run 1.
+   RUN 2 NOTE: run 1 cleanup removed that rule (default). Before run 2
+   dispatch, the rule must be RE-ADDED with the same claims, Preview
+   only, and read back in full; dispatch is forbidden until that
+   read-back confirms exactly one rule, Preview only, no Production.
 2. Public repo + branch protection + environment (zero secrets) verified —
    done (see "Verified repository controls").
 3. Secret-free reviewer-gate dry run passed (run 41787804327) and secret-free
@@ -146,8 +222,12 @@ family data.
 5. Founder Gate C approval naming that exact SHA, the Option A account
    method, and the single run.
 6. Provision environment secrets (inventory above) and create the staging
-   count function + harness role, with negative tests passing. The
+   count function + harness role, with negative tests passing
+   (including CREATE TEMP TABLE failing, per the staging
+   TEMP-from-PUBLIC revocation that remains in place). The
    function body reviewed is exactly `docs/count-function-t08b.sql`.
+   Fresh synthetic Option A accounts are created; their families and
+   private accounts are created IN-RUN by T03b/T07b, not pre-created.
 7. Reviewer verifies the pending run SHA equals the Codex-ACCEPTED
    activation SHA and that the ACCEPT exists, then approves that single run.
 8. One run only. Sanitized results only.
@@ -165,7 +245,10 @@ In order:
 2. Delete all environment secrets; verify the secret list is empty.
 3. Drop the count function and the harness role from the staging database.
 4. Disable or delete the two synthetic staging accounts and their
-   test-family data.
+   test-family data (including the families and accounts created
+   in-run by T03b/T07b). The staging TEMP-from-PUBLIC revocation is
+   NOT reversed by cleanup unless GPT directs otherwise; it is
+   disclosed, not silently restored.
 5. Remove the consolidated workflow from main (default; retention for
    audit needs its own decision).
 6. Verify cleanup and report the verification, not the intent, to GPT.
