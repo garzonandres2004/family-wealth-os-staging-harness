@@ -40,8 +40,13 @@
 -- ONLY three bigint counts — no rows, no emails, no hashes, no other
 -- family data. Residual access: callable with arbitrary family/email
 -- inputs, returning only counts from synthetic staging data.
--- search_path is pinned to public so a hostile search_path cannot
--- redirect the fwos_state reference.
+-- search_path is pinned to public, pg_temp (pg_temp LAST, explicitly
+-- listed, so it is searched last, not first as PostgreSQL's implicit
+-- default would do). AND the relation is schema-qualified as
+-- public.fwos_state below, so even a temporary table named fwos_state
+-- created by a caller with TEMP privilege cannot shadow it (Codex
+-- finding B2: pinning search_path alone does not exclude the implicit
+-- temporary-schema precedence for unqualified relation lookup).
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.fwos_harness_t08b_counts(
@@ -56,7 +61,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
     SELECT
         count(*) FILTER (
@@ -76,7 +81,7 @@ AS $$
               AND (m->>'inviteTokenHash') IS NULL
               AND (m->>'inviteExpiresAt') IS NULL
         )
-    FROM fwos_state,
+    FROM public.fwos_state,
          LATERAL jsonb_array_elements(
              COALESCE(data -> 'members', '[]'::jsonb)
          ) AS m
@@ -93,7 +98,9 @@ $$;
 -- UPDATE / DELETE / TRUNCATE / DDL, and NO access to any auth schema.
 -- Pre-use negative tests (pass/fail only, error text classified,
 -- never echoed): SELECT count via the function succeeds; INSERT /
--- UPDATE / DELETE / CREATE TABLE fail; auth.* SELECT fails; the
+-- UPDATE / DELETE / CREATE TABLE fail; CREATE TEMP TABLE fails (the
+-- harness role must have NO TEMP privilege, so no temporary fwos_state
+-- can shadow the qualified relation); auth.* SELECT fails; the
 -- database host contains the staging ref and NOT the production ref.
 -- Any failure = prerequisite failure, role dropped, no run.
 -- Cleanup (immediately after the single run, pass or fail):
