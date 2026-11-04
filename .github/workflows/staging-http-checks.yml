@@ -28,7 +28,13 @@
 #     design, and no bypass header appears in this file.
 #     T00 mints a fresh OIDC token in-job, marks it secret, exports it
 #     runner-locally, and asserts its claims (booleans only) before any
-#     test step. The token is NEVER printed, logged, stored, or passed
+#     test step. The token is NEVER printed or logged, and is never
+#     passed as a URL query parameter. It IS stored runner-locally for
+#     the duration of this single job only (exported via
+#     core.exportVariable, masked in logs); the runner-managed
+#     environment file holding it is outside the Cleanup deletion list
+#     and is discarded with the ephemeral runner. It is never committed,
+#     copied, or sent anywhere else.
 #     as a URL query parameter. Vercel does NOT check workflow_sha,
 #     actor, or event_name; code integrity rests on GitHub environment
 #     approval + reviewer SHA-match + fresh Codex review, not on OIDC.
@@ -180,11 +186,17 @@ jobs:
           echo "harness=staging-http-checks target=staging-preview-only" >> results.txt
 
       # -- 0. OIDC self-check: mint, assert claims, export token --------
-      # T00 runs BEFORE any test step and BEFORE any secret use. It
-      # mints a fresh GitHub OIDC token, marks it secret (masked in
-      # logs), asserts its claims as booleans only, and exports it to
-      # the job environment for later steps. The token value is NEVER
-      # printed, logged, stored, or passed as a URL query parameter.
+      # T00 runs BEFORE any test step and before any explicit use of
+      # staging credentials in test steps (job-scope secret supply and
+      # checkout precede T00, so no broader claim is made). It mints a
+      # fresh GitHub OIDC token, marks it secret (masked in logs),
+      # asserts its claims as booleans only, and exports it to the job
+      # environment for later steps. The token value is NEVER printed
+      # or logged, and is never passed as a URL query parameter. It IS
+      # stored runner-locally for this single job only (exported via
+      # core.exportVariable); that runner-managed environment file is
+      # outside the Cleanup deletion list and is discarded with the
+      # ephemeral runner.
       # Assertions: iss is GitHub's issuer; aud present; repository is
       # this public repo; repository_id present; environment is
       # staging-http-checks; ref is refs/heads/main; workflow_sha
@@ -476,15 +488,23 @@ jobs:
           # cookie cannot be masked by the next loop iteration.
           for name in fwos_session fwos_refresh; do
             line=$(grep -i "^set-cookie: ${name}=" loginA.headers | head -n 1 || true)
-            low=$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')
+            # ATTRIBUTE-BOUNDARY PARSING (Codex finding): attributes
+            # are parsed as complete semicolon-delimited name/value
+            # pairs AFTER the first semicolon only, so the cookie
+            # VALUE (first segment) can never satisfy a flag, and
+            # "Path=/restricted" or "SameSite=LaxSomething" cannot
+            # satisfy the exact Path=/ or SameSite=Lax assertions.
+            # Attribute names/values are lowercased; matching is
+            # against whole attribute lines only (grep -x).
+            attrs=$(printf '%s' "$line" | cut -d';' -f2- | tr ';' '\n' | sed 's/^ *//;s/ *$//' | tr '[:upper:]' '[:lower:]' || true)
             present=no; httponly=no; samesite=no; path=no; secure=no; maxage=no; domain=no
             [ -n "$line" ] && present=yes
-            case "$low" in *"httponly"*) httponly=yes;; esac
-            case "$low" in *"samesite=lax"*) samesite=yes;; esac
-            case "$low" in *"path=/"*) path=yes;; esac
-            case "$low" in *"; secure"*) secure=yes;; esac
-            case "$low" in *"max-age="*) maxage=yes;; esac
-            case "$low" in *"domain="*) domain=yes;; esac
+            printf '%s\n' "$attrs" | grep -qx 'httponly' && httponly=yes || true
+            printf '%s\n' "$attrs" | grep -qx 'samesite=lax' && samesite=yes || true
+            printf '%s\n' "$attrs" | grep -qx 'path=/' && path=yes || true
+            printf '%s\n' "$attrs" | grep -qx 'secure' && secure=yes || true
+            printf '%s\n' "$attrs" | grep -qxE 'max-age=[0-9]+' && maxage=yes || true
+            printf '%s\n' "$attrs" | grep -qxE 'domain=.+' && domain=yes || true
             echo "t03_cookie_${name}_present=$present httponly=$httponly samesite_lax=$samesite path_root=$path secure=$secure maxage=$maxage domain_present=$domain" >> results.txt
             assert_eq "t03_cookie_${name}_present" "$present" "yes"
             assert_eq "t03_cookie_${name}_httponly" "$httponly" "yes"
@@ -961,7 +981,10 @@ jobs:
           # validated numeric-only before any comparison.
           printf '%s' "SELECT * FROM fwos_harness_t08b_counts(:'fam', :'em');" > db_query.sql
           out=$(psql -X -v ON_ERROR_STOP=1 "$STAGING_COUNT_DATABASE_URL" -t -A -F '|' -v fam="$famA" -v em="$STAGING_USER_B_EMAIL" -f db_query.sql 2>db.err) || {
-            if grep -qi "could not connect\\|connection refused\\|connection timed out\\|no pg_hba\\|password authentication failed" db.err 2>/dev/null; then
+            if grep -qi "does not exist\|undefined_function" db.err 2>/dev/null; then
+              echo "t08_db_failure=prerequisite_failure" >> results.txt
+              echo "t08_db_prerequisite=count function absent" >> results.txt
+            elif grep -qi "could not connect\\|connection refused\\|connection timed out\\|no pg_hba\\|password authentication failed" db.err 2>/dev/null; then
               echo "t08_db_failure=connection_failure" >> results.txt
             else
               echo "t08_db_failure=query_failure" >> results.txt
@@ -969,6 +992,12 @@ jobs:
             exit 1
           }
           if [ "$(printf '%s' "$out" | grep -c .)" != "1" ]; then echo "ASSERT_FAIL t08b_single_line_output" >&2; exit 1; fi
+          # EXACT THREE-FIELD VALIDATION (Codex finding): the whole
+          # output must be exactly three pipe-separated numeric fields.
+          # "1|0|1|unexpected" must FAIL, not pass on its first three
+          # fields. Only after this whole-output match is extraction
+          # performed.
+          if ! printf '%s' "$out" | grep -qxE '[0-9]+\|[0-9]+\|[0-9]+'; then echo "ASSERT_FAIL t08b_exact_three_fields" >&2; exit 1; fi
           db_active=$(printf '%s' "$out" | cut -d'|' -f1)
           db_invited=$(printf '%s' "$out" | cut -d'|' -f2)
           db_consumed=$(printf '%s' "$out" | cut -d'|' -f3)
@@ -992,8 +1021,15 @@ jobs:
           echo "t09_logout=$s" >> results.txt
           assert_eq t09_logout "$s" "200"
           cleared_a=no; cleared_b=no
-          grep -qi "^set-cookie: fwos_session=;.*max-age=0" logout.headers && cleared_a=yes || true
-          grep -qi "^set-cookie: fwos_refresh=;.*max-age=0" logout.headers && cleared_b=yes || true
+          # EXACT Max-Age=0 (Codex finding): "max-age=01" is nonzero
+          # and must not pass. Parse attributes after the first
+          # semicolon and match the whole attribute line exactly.
+          for _pair in "fwos_session:cleared_a" "fwos_refresh:cleared_b"; do
+            _n="${_pair%%:*}"; _v="${_pair##*:}"
+            _line=$(grep -i "^set-cookie: ${_n}=" logout.headers | head -n 1 || true)
+            _attrs=$(printf '%s' "$_line" | cut -d';' -f2- | tr ';' '\n' | sed 's/^ *//;s/ *$//' | tr '[:upper:]' '[:lower:]' || true)
+            if printf '%s\n' "$_attrs" | grep -qx 'max-age=0'; then eval "$_v=yes"; fi
+          done
           echo "t09_logout_clears_session_cookie=$cleared_a" >> results.txt
           echo "t09_logout_clears_refresh_cookie=$cleared_b" >> results.txt
           # Both clearing flags are ASSERTED here, not merely echoed

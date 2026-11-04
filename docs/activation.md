@@ -60,8 +60,13 @@ Rules:
 
 - Secrets are **environment secrets only**, never repository secrets, never
   committed, never printed, never pasted into ChatGPT, never put in a URL.
-- The OIDC token is minted fresh in-job by T00, marked secret, and never
-  printed, logged, stored, or passed as a URL query parameter.
+- The OIDC token is minted fresh in-job by T00, marked secret, never
+  printed or logged, and never passed as a URL query parameter. It IS
+  stored runner-locally for the duration of the single job only
+  (exported via `core.exportVariable`, masked in logs); the
+  runner-managed environment file holding it is outside the workflow
+  Cleanup deletion list and is discarded with the ephemeral runner.
+  It is never committed, copied, or sent anywhere else.
 - The invitation code is runner-local only (T08) and deleted in the
   always-run Cleanup step.
 - Cookie values, session tokens, response bodies, raw headers, DB error
@@ -71,6 +76,10 @@ Rules:
 - After the run, deletion is **verified**, not assumed: `gh secret list`
   for the environment must return empty, and the verification (not the
   intent) is reported to GPT.
+- T00 runs before any test step and before any explicit use of staging
+  credentials in test steps. It does NOT claim to precede job-scope
+  secret supply (environment secrets are supplied at job scope and
+  checkout precedes T00).
 
 Explicitly absent from this package and from the activation window:
 
@@ -307,12 +316,9 @@ dashboard screenshots with unrelated settings.
 
 ## Codex review
 
-To be filled at activation-package commit time: the exact commit SHA,
-the Codex review session/model, and the verdict. **An ACCEPT for the
-exact SHA below is mandatory before any Gate C approval is sought.**
-A previous ACCEPT (for design SHA 332429b or any other SHA) does not
-carry over to this package.
-
-- Activation SHA: _to be filled after commit_
-- Codex review: _to be filled after review_
-- Verdict: _to be filled after review_
+Recorded EXTERNALLY in the Gate C report, not by editing this package:
+editing this package to fill in a verdict would create a new SHA
+requiring a fresh review. **An ACCEPT for the exact SHA of this package
+is mandatory before any Gate C approval is sought.** A previous ACCEPT
+(for design SHA 332429b, for SHA 98f86eb, or any other SHA) does not
+carry over to a new SHA.
