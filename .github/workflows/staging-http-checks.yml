@@ -488,6 +488,16 @@ jobs:
           # cookie cannot be masked by the next loop iteration.
           for name in fwos_session fwos_refresh; do
             line=$(grep -i "^set-cookie: ${name}=" loginA.headers | head -n 1 || true)
+            # TERMINAL CR (Codex finding, r2): curl -D captures
+            # CRLF-terminated headers; command substitution strips the
+            # trailing newline but RETAINS the carriage return, so a
+            # valid final attribute would arrive as "samesite=lax\r"
+            # and fail exact matching. Strip ONLY the single terminal
+            # CR here (a line ending, not part of any attribute value);
+            # embedded CRs elsewhere are not stripped by this step and
+            # cannot silently become valid attributes, because the
+            # exact whole-line matches below would still fail on them.
+            line="${line%$'\r'}"
             # ATTRIBUTE-BOUNDARY PARSING (Codex finding): attributes
             # are parsed as complete semicolon-delimited name/value
             # pairs AFTER the first semicolon only, so the cookie
@@ -1027,6 +1037,10 @@ jobs:
           for _pair in "fwos_session:cleared_a" "fwos_refresh:cleared_b"; do
             _n="${_pair%%:*}"; _v="${_pair##*:}"
             _line=$(grep -i "^set-cookie: ${_n}=" logout.headers | head -n 1 || true)
+            # TERMINAL CR (Codex finding, r2): same CRLF rule as T03 —
+            # strip only the single terminal CR, so "max-age=0\r" does
+            # not fail the exact Max-Age=0 match.
+            _line="${_line%$'\r'}"
             _attrs=$(printf '%s' "$_line" | cut -d';' -f2- | tr ';' '\n' | sed 's/^ *//;s/ *$//' | tr '[:upper:]' '[:lower:]' || true)
             if printf '%s\n' "$_attrs" | grep -qx 'max-age=0'; then eval "$_v=yes"; fi
           done
